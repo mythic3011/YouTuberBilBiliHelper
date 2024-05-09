@@ -1,0 +1,14 @@
+version: '3'
+services:
+  dragonfly:
+    image: 'docker.dragonflydb.io/dragonflydb/dragonfly'
+    ulimits:
+      memlock: -1
+    container_name: dragonfly-cluster
+    ports:
+      - "16379:6379"
+    restart: always
+    volumes:
+      - ./data:/data
+      - ./config:/config
+
