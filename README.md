@@ -1,4 +1,4 @@
-# Api
+# YouTuber BilBili Helper API
 
 ## Installation
 
