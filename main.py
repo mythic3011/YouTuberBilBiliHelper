@@ -9,9 +9,14 @@ import aiohttp
 import yt_dlp
 import time
 from urllib.parse import urlparse
+<<<<<<< HEAD
+import logging
+import redis.asyncio as redis
+=======
 import logging
 import redis.asyncio as redis
 import uvicorn
+>>>>>>> e7199fc7509c4bdc56ab89cb65e0ef65dcce1267
 
 app = FastAPI()
 
@@ -220,6 +225,15 @@ async def ws_handler(websocket: WebSocket):
     room_id = "default"
     video_app_state.add_client(room_id, client_id)
     try:
+<<<<<<< HEAD
+        await websocket.accept()
+        while True:
+            data = await websocket.receive_text()
+            clients = video_app_state.get_clients(room_id)
+            for other_client_id in clients:
+                if other_client_id != client_id:
+                    await websocket.send_text(f"User {client_id} says: {data}")
+=======
         await websocket.accept()
         while True:
             data = await websocket.receive_text()
@@ -228,6 +242,7 @@ async def ws_handler(websocket: WebSocket):
                 if other_client_id != client_id:
                     # Here we send the message directly to the WebSocket, not via HTTP
                     await websocket.send_text(f"User {client_id} says: {data}")
+>>>>>>> e7199fc7509c4bdc56ab89cb65e0ef65dcce1267
     except Exception as e:
         print(f"WebSocket error: {e}")
     finally:
@@ -238,4 +253,10 @@ async def websocket_endpoint(websocket: WebSocket):
     await ws_handler(websocket)
 
 if __name__ == "__main__":
+<<<<<<< HEAD
+    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+=======
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+>>>>>>> e7199fc7509c4bdc56ab89cb65e0ef65dcce1267
