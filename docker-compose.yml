@@ -1,9 +1,9 @@
-version: '3'
+version: "3.8"
 services:
   app:
     build: .
     ports:
-      - "5000:5000"
+      - "8000:8000"
     environment:
       REDIS_HOST: dragonfly
     depends_on:
