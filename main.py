@@ -1,20 +1,25 @@
-from flask import Flask, request, jsonify, Response
-import redis
-import logging
+import asyncio
+import uuid
 import os
+from fastapi import FastAPI, WebSocket, HTTPException, Depends, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, JSONResponse
+from collections import defaultdict
+import aiohttp
 import yt_dlp
 import time
 from urllib.parse import urlparse
-import requests
-import shutil
+import logging
+import redis.asyncio as redis
+import uvicorn
 
-app = Flask(__name__)
+app = FastAPI()
 
-# Configuration
+# Configuration (environment variables or config file)
 REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
 RATE_LIMIT_WINDOW = int(os.environ.get("RATE_LIMIT_WINDOW", 60))  # seconds
-RATE_LIMIT_MAX_REQUESTS = int(os.environ.get("RATE_LIMIT_MAX_REQUESTS", 10))
+RATE_LIMIT_MAX_REQUESTS = int(os.environ.get("RATE_LIMIT_MAX_REQUESTS", 100))
 DOWNLOAD_DIRECTORY = os.environ.get("DOWNLOAD_DIRECTORY", "downloads")
 MAX_STORAGE_GB = int(os.environ.get("MAX_STORAGE_GB", 10))
 MAX_STORAGE_BYTES = MAX_STORAGE_GB * 1024 * 1024 * 1024
@@ -24,59 +29,70 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# Redis client
-redis_client = redis.StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=0)
+# Initialize Redis client
+redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0)
 
 # Ensure download directory exists
 os.makedirs(DOWNLOAD_DIRECTORY, exist_ok=True)
 
-def is_youtube_url(url):
-    parsed_url = urlparse(url)
-    return parsed_url.netloc in ["www.youtube.com", "youtube.com", "m.youtube.com"]
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 
-def is_bilibili_url(url):
+def is_youtube_url(url: str) -> bool:
     parsed_url = urlparse(url)
-    return parsed_url.netloc in ["www.bilibili.com", "bilibili.com", "m.bilibili.com"]
+    return parsed_url.netloc in ["www.youtube.com", "youtube.com", "m.youtube.com", "youtu.be"]
 
-def get_domain_from_url(url):
+def is_bilibili_url(url: str) -> bool:
     parsed_url = urlparse(url)
-    return parsed_url.netloc
+    return parsed_url.netloc in ["www.bilibili.com", "bilibili.com"]
 
-def apply_rate_limit(identifier):
-    key = f"rate_limit:{identifier}"
+async def apply_rate_limit(request: Request):
+    client_ip = request.client.host
+    key = f"rate_limit:{client_ip}"
     now = int(time.time())
-    with redis_client.pipeline() as pipe:
-        pipe.zadd(key, {now: now})
-        pipe.zremrangebyscore(key, 0, now - RATE_LIMIT_WINDOW)
-        pipe.zcard(key)
-        pipe.expire(key, RATE_LIMIT_WINDOW)
-        _, _, request_count = pipe.execute()
+    with await redis_client.pipeline() as pipe:
+        await pipe.zadd(key, {now: now})
+        await pipe.zremrangebyscore(key, 0, now - RATE_LIMIT_WINDOW)
+        count_future = pipe.zcard(key)
+        await pipe.expire(key, RATE_LIMIT_WINDOW)
+        request_count = await count_future
     if request_count > RATE_LIMIT_MAX_REQUESTS:
-        return False
-    return True
+        raise HTTPException(status_code=429, detail="Too many requests")
 
-def get_downloaded_files_size():
+async def get_downloaded_files_size():
     total_size = 0
     for dirpath, dirnames, filenames in os.walk(DOWNLOAD_DIRECTORY):
         for f in filenames:
             fp = os.path.join(dirpath, f)
-            total_size += os.path.getsize(fp)
+            try:
+                total_size += os.path.getsize(fp)
+            except OSError as e:
+                logging.warning(f"Could not get size of file {fp}: {e}")
     return total_size
 
-def enforce_storage_limit():
-    current_size = get_downloaded_files_size()
+async def enforce_storage_limit():
+    current_size = await get_downloaded_files_size()
     if current_size > MAX_STORAGE_BYTES:
         logging.warning(
             f"Storage limit exceeded. Current size: {current_size / (1024**3):.2f} GB, Limit: {MAX_STORAGE_GB} GB"
         )
-        # Implement logic to delete older files. A simple approach is to delete by modification time.
+        # Simple logic to delete oldest files
         files = []
         for dirpath, dirnames, filenames in os.walk(DOWNLOAD_DIRECTORY):
             for filename in filenames:
                 filepath = os.path.join(dirpath, filename)
-                files.append((filepath, os.path.getmtime(filepath)))
+                try:
+                    files.append((filepath, os.path.getmtime(filepath)))
+                except OSError as e:
+                    logging.warning(f"Could not get modification time of file {filepath}: {e}")
 
-        files.sort(key=lambda item: item[1])  # Sort by modification time (oldest first)
+        files.sort(key=lambda item: item[1])
 
         bytes_to_free = current_size - MAX_STORAGE_BYTES
         freed_bytes = 0
@@ -89,194 +105,137 @@ def enforce_storage_limit():
                 if freed_bytes >= bytes_to_free:
                     logging.info(f"Freed up enough space: {freed_bytes / (1024**2):.2f} MB")
                     break
-            except Exception as e:
+            except OSError as e:
                 logging.error(f"Error deleting file {filepath}: {e}")
 
-@app.before_request
-def rate_limiting():
-    client_ip = request.remote_addr
-    if not apply_rate_limit(client_ip):
-        logging.warning(f"Rate limit exceeded for IP: {client_ip}")
-        return jsonify({"error": "Too many requests"}, 429)
+async def fetch_video_info(url: str):
+    ydl_opts = {
+        'quiet': True,
+        'noplaylist': True,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        return ydl.extract_info(url, download=False)
 
-@app.errorhandler(Exception)
-def handle_unexpected_error(error):
-    logging.error(f"Unexpected error: {error}")
-    return jsonify({"error": "An unexpected error occurred."}, 500)
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    logging.error(f"HTTPException: {exc.detail} (status_code={exc.status_code})")
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
-@app.route("/youtube/download/video", methods=["POST"])
-def download_youtube_video():
-    data = request.get_json()
-    if not data or "url" not in data:
-        return jsonify({"error": "Missing video URL"}, 400)
-    video_url = data["url"]
+@app.exception_handler(Exception)
+async def unexpected_exception_handler(request: Request, exc: Exception):
+    logging.error(f"Unexpected error: {exc}")
+    return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred."})
 
-    if not is_youtube_url(video_url):
-        return jsonify({"error": "Invalid YouTube URL"}, 400)
-
+@app.post("/youtube/download/")
+async def download_youtube_video(request: Request, url: str,  rate_limit: None = Depends(apply_rate_limit)):
+    if not is_youtube_url(url):
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL")
     try:
         ydl_opts = {
-            "outtmpl": os.path.join(DOWNLOAD_DIRECTORY, "youtube/%(title)s.%(ext)s"),
+            'outtmpl': os.path.join(DOWNLOAD_DIRECTORY, 'youtube', '%(title)s.%(ext)s'),
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(video_url, download=True)
-            video_filename = ydl.prepare_filename(info_dict)
-            enforce_storage_limit()
-            return jsonify({"message": "YouTube video download started", "filename": video_filename}), 200
+            ydl.download([url])
+        await enforce_storage_limit()
+        return {"message": "YouTube video download started"}
     except Exception as e:
         logging.error(f"Error downloading YouTube video: {e}")
-        return jsonify({"error": f"Failed to download YouTube video: {str(e)}"}, 500)
+        raise HTTPException(status_code=500, detail=f"Failed to download YouTube video: {str(e)}")
 
-@app.route("/youtube/download/playlist", methods=["POST"])
-def download_youtube_playlist():
-    data = request.get_json()
-    if not data or "url" not in data:
-        return jsonify({"error": "Missing playlist URL"}, 400)
-    playlist_url = data["url"]
-
-    if not is_youtube_url(playlist_url):
-        return jsonify({"error": "Invalid YouTube playlist URL"}, 400)
-
+@app.post("/bilibili/download/")
+async def download_bilibili_video(request: Request, url: str, rate_limit: None = Depends(apply_rate_limit)):
+    if not is_bilibili_url(url):
+        raise HTTPException(status_code=400, detail="Invalid Bilibili URL")
     try:
         ydl_opts = {
-            "outtmpl": os.path.join(DOWNLOAD_DIRECTORY, "youtube/%(playlist)s/%(title)s.%(ext)s"),
-            "extract_flat": True,  # Only get video information, not download yet
+            'outtmpl': os.path.join(DOWNLOAD_DIRECTORY, 'bilibili', '%(title)s.%(ext)s'),
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            playlist_info = ydl.extract_info(playlist_url, download=False)
-            if playlist_info and "entries" in playlist_info:
-                for entry in playlist_info["entries"]:
-                    if entry and "url" in entry:
-                        video_url = entry["url"]
-                        try:
-                            ydl_opts_single = {
-                                "outtmpl": os.path.join(DOWNLOAD_DIRECTORY, "youtube/%(playlist)s/%(title)s.%(ext)s"),
-                            }
-                            with yt_dlp.YoutubeDL(ydl_opts_single) as ydl_single:
-                                ydl_single.download([video_url])
-                                enforce_storage_limit()
-                        except Exception as e:
-                            logging.error(f"Error downloading video from playlist {playlist_url}: {e}")
-                return jsonify({"message": "YouTube playlist download started"}), 200
-            else:
-                return jsonify({"error": "Could not retrieve playlist information"}, 500)
-    except Exception as e:
-        logging.error(f"Error processing YouTube playlist: {e}")
-        return jsonify({"error": f"Failed to process YouTube playlist: {str(e)}"}, 500)
-
-@app.route("/youtube/stream/video", methods=["POST"])
-def stream_youtube_video():
-    data = request.get_json()
-    if not data or "url" not in data:
-        return jsonify({"error": "Missing video URL"}, 400)
-    video_url = data["url"]
-
-    if not is_youtube_url(video_url):
-        return jsonify({"error": "Invalid YouTube URL"}, 400)
-
-    try:
-        ydl_opts = {
-            "format": "best[protocol!=http_dash_segments]",  # Get the best non-DASH format
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(video_url, download=False)
-            if 'url' in info_dict:
-                video_url_stream = info_dict['url']
-                response = requests.get(video_url_stream, stream=True)
-                return Response(response.iter_content(chunk_size=1024),
-                                content_type=response.headers['Content-Type'])
-            else:
-                return jsonify({"error": "Could not retrieve direct video URL"}, 500)
-    except Exception as e:
-        logging.error(f"Error streaming YouTube video: {e}")
-        return jsonify({"error": f"Failed to stream YouTube video: {str(e)}"}, 500)
-
-@app.route("/bilibili/download/video", methods=["POST"])
-def download_bilibili_video():
-    data = request.get_json()
-    if not data or "url" not in data:
-        return jsonify({"error": "Missing video URL"}, 400)
-    video_url = data["url"]
-
-    if not is_bilibili_url(video_url):
-        return jsonify({"error": "Invalid Bilibili URL"}, 400)
-
-    try:
-        ydl_opts = {
-            "outtmpl": os.path.join(DOWNLOAD_DIRECTORY, "bilibili/%(title)s.%(ext)s"),
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(video_url, download=True)
-            video_filename = ydl.prepare_filename(info_dict)
-            enforce_storage_limit()
-            return jsonify({"message": "Bilibili video download started", "filename": video_filename}), 200
+            ydl.download([url])
+        await enforce_storage_limit()
+        return {"message": "Bilibili video download started"}
     except Exception as e:
         logging.error(f"Error downloading Bilibili video: {e}")
-        return jsonify({"error": f"Failed to download Bilibili video: {str(e)}"}, 500)
+        raise HTTPException(status_code=500, detail=f"Failed to download Bilibili video: {str(e)}")
 
-@app.route("/bilibili/download/playlist", methods=["POST"])
-def download_bilibili_playlist():
-    data = request.get_json()
-    if not data or "url" not in data:
-        return jsonify({"error": "Missing playlist URL"}, 400)
-    playlist_url = data["url"]
-
-    if not is_bilibili_url(playlist_url):
-        return jsonify({"error": "Invalid Bilibili playlist URL"}, 400)
-
+@app.get("/youtube/stream/")
+async def stream_youtube_video(request: Request, url: str, rate_limit: None = Depends(apply_rate_limit)):
+    if not is_youtube_url(url):
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL")
     try:
-        ydl_opts = {
-            "outtmpl": os.path.join(DOWNLOAD_DIRECTORY, "bilibili/%(playlist)s/%(title)s.%(ext)s"),
-            "extract_flat": True,
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            playlist_info = ydl.extract_info(playlist_url, download=False)
-            if playlist_info and "entries" in playlist_info:
-                for entry in playlist_info["entries"]:
-                    if entry and "url" in entry:
-                        video_url = entry["url"]
-                        try:
-                            ydl_opts_single = {
-                                "outtmpl": os.path.join(DOWNLOAD_DIRECTORY, "bilibili/%(playlist)s/%(title)s.%(ext)s"),
-                            }
-                            with yt_dlp.YoutubeDL(ydl_opts_single) as ydl_single:
-                                ydl_single.download([video_url])
-                                enforce_storage_limit()
-                        except Exception as e:
-                            logging.error(f"Error downloading video from Bilibili playlist {playlist_url}: {e}")
-                return jsonify({"message": "Bilibili playlist download started"}), 200
-            else:
-                return jsonify({"error": "Could not retrieve Bilibili playlist information"}, 500)
+        info_dict = await fetch_video_info(url)
+        if info_dict and 'url' in info_dict:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(info_dict['url']) as response:
+                    if response.status == 200:
+                        return StreamingResponse(response.content, media_type=response.headers.get('content-type'))
+                    else:
+                        raise HTTPException(status_code=response.status, detail="Failed to fetch video stream")
+        else:
+            raise HTTPException(status_code=404, detail="Could not retrieve video stream URL")
     except Exception as e:
-        logging.error(f"Error processing Bilibili playlist: {e}")
-        return jsonify({"error": f"Failed to process Bilibili playlist: {str(e)}"}, 500)
+        logging.error(f"Error streaming YouTube video: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to stream YouTube video: {str(e)}")
 
-@app.route("/bilibili/stream/video", methods=["POST"])
-def stream_bilibili_video():
-    data = request.get_json()
-    if not data or "url" not in data:
-        return jsonify({"error": "Missing video URL"}, 400)
-    video_url = data["url"]
-
-    if not is_bilibili_url(video_url):
-        return jsonify({"error": "Invalid Bilibili URL"}, 400)
-
+@app.get("/bilibili/stream/")
+async def stream_bilibili_video(request: Request, url: str, rate_limit: None = Depends(apply_rate_limit)):
+    if not is_bilibili_url(url):
+        raise HTTPException(status_code=400, detail="Invalid Bilibili URL")
     try:
-        ydl_opts = {
-            "format": "best[protocol!=http_dash_segments]",  # Get the best non-DASH format
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(video_url, download=False)
-            if 'url' in info_dict:
-                video_url_stream = info_dict['url']
-                response = requests.get(video_url_stream, stream=True)
-                return Response(response.iter_content(chunk_size=1024),
-                                content_type=response.headers['Content-Type'])
-            else:
-                return jsonify({"error": "Could not retrieve direct video URL"}, 500)
+        info_dict = await fetch_video_info(url)
+        if info_dict and 'url' in info_dict:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(info_dict['url']) as response:
+                    if response.status == 200:
+                        return StreamingResponse(response.content, media_type=response.headers.get('content-type'))
+                    else:
+                        raise HTTPException(status_code=response.status, detail="Failed to fetch video stream")
+        else:
+            raise HTTPException(status_code=404, detail="Could not retrieve video stream URL")
     except Exception as e:
         logging.error(f"Error streaming Bilibili video: {e}")
-        return jsonify({"error": f"Failed to stream Bilibili video: {str(e)}"}, 500)
+        raise HTTPException(status_code=500, detail=f"Failed to stream Bilibili video: {str(e)}")
+
+# оставлен функционал websocket из первого кода, предполагая, что он нужен
+class AppState:
+    def __init__(self):
+        self.rooms = defaultdict(set)
+
+    def add_client(self, room_id: str, client_id: str):
+        self.rooms[room_id].add(client_id)
+
+    def remove_client(self, room_id: str, client_id: str):
+        if client_id in self.rooms[room_id]:
+            self.rooms[room_id].remove(client_id)
+            if not self.rooms[room_id]:
+                del self.rooms[room_id]
+
+    def get_clients(self, room_id: str):
+        return self.rooms.get(room_id, set())
+
+video_app_state = AppState()
+
+async def ws_handler(websocket: WebSocket):
+    client_id = str(uuid.uuid4())
+    room_id = "default"
+    video_app_state.add_client(room_id, client_id)
+    try:
+        await websocket.accept()
+        while True:
+            data = await websocket.receive_text()
+            clients = video_app_state.get_clients(room_id)
+            for other_client_id in clients:
+                if other_client_id != client_id:
+                    # Here we send the message directly to the WebSocket, not via HTTP
+                    await websocket.send_text(f"User {client_id} says: {data}")
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+    finally:
+        video_app_state.remove_client(room_id, client_id)
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await ws_handler(websocket)
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
