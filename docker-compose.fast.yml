@@ -1,0 +1,33 @@
+version: "3.8"
+services:
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile.fast
+    ports:
+      - "8000:8000"
+    environment:
+      REDIS_HOST: dragonfly
+      PYTHONUNBUFFERED: 1
+    depends_on:
+      - dragonfly
+    volumes:
+      # Mount config for easier testing
+      - ./config:/app/config
+      - ./logs:/app/logs
+    restart: unless-stopped
+    
+  dragonfly:
+    image: 'docker.dragonflydb.io/dragonflydb/dragonfly'
+    ulimits:
+      memlock: -1
+    container_name: dragonfly-fast
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    volumes:
+      - dragonfly_data:/data
+    command: ["--logtostderr", "--alsologtostderr=false"]
+
+volumes:
+  dragonfly_data:

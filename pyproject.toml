@@ -1,0 +1,47 @@
+[project]
+name = "youtuberbilbilihelper"
+version = "2.0.0"
+description = "High-performance video streaming proxy API for YouTube, BiliBili, Instagram, Twitter, and Twitch"
+readme = "README.md"
+authors = [
+    { name = "Mythic3011", email = "42365807+mythic3011@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    # Core FastAPI dependencies
+    "fastapi>=0.104.1",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    
+    # HTTP client
+    "aiohttp>=3.9.0",
+    
+    # Video processing
+    "yt-dlp>=2023.12.30",
+    
+    # Database and caching
+    "redis>=5.0.1",
+    
+    # System monitoring
+    "psutil>=5.9.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.3",
+    "pytest-asyncio>=0.21.1",
+    "httpx>=0.25.2",
+]
+
+[project.urls]
+Homepage = "https://github.com/mythic3011/YouTuberBilBiliHelper"
+Repository = "https://github.com/mythic3011/YouTuberBilBiliHelper"
+Issues = "https://github.com/mythic3011/YouTuberBilBiliHelper/issues"
+
+[project.scripts]
+youtuberbilbilihelper = "app.main:app"
+
+[build-system]
+requires = ["uv_build>=0.8.12,<0.9.0"]
+build-backend = "uv_build"

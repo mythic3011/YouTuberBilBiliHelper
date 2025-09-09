@@ -108,8 +108,8 @@ async def demo_authentication_impact():
     
     test_cases = [
         ("YouTube", "https://youtu.be/dQw4w9WgXcQ", "Should work without auth"),
-        ("Instagram", "https://www.instagram.com/p/ABC123/", "May fail without auth"),
-        ("Twitter", "https://twitter.com/user/status/1234567890", "May fail without auth")
+        ("Instagram", "https://www.instagram.com/p/CwxQzVvSaAI/", "May fail without auth"),
+        ("Twitter", "https://x.com/SpaceX/status/1234567890123456789", "May fail without auth")
     ]
     
     async with aiohttp.ClientSession() as session:
