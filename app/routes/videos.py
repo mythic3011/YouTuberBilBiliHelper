@@ -2,7 +2,7 @@
 
 import time
 from typing import List
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Query
 from fastapi.responses import RedirectResponse, StreamingResponse
 import aiohttp
 from app.models import (
@@ -287,3 +287,77 @@ async def redirect_to_stream(url: str, quality: str = "highest"):
     except Exception as e:
         logger.error(f"Error redirecting to stream: {e}")
         raise HTTPException(status_code=500, detail="Failed to get stream URL")
+
+
+@router.get("/download/vrchat", responses={
+    302: {"description": "Redirect to optimized download"},
+    400: {"model": ErrorResponse, "description": "Invalid request"},
+    404: {"model": ErrorResponse, "description": "Video not found"},
+    500: {"model": ErrorResponse, "description": "Internal server error"}
+})
+async def download_video_vrchat_get(
+    url: str = Query(..., description="Video URL from any supported platform"),
+    quality: str = Query("best", description="Video quality (best, 720p, 480p, 360p)"),
+    player: str = Query("auto", description="Unity player type optimization (avpro, unity, auto)"),
+    filename: str = Query(None, description="Custom filename (optional)")
+):
+    """
+    VRChat-optimized video download with Unity player compatibility (GET method only).
+    
+    **GET-only for VRChat compatibility** - VRChat video players only support GET requests.
+    
+    **Usage:**
+    - `GET /api/v2/videos/download/vrchat?url=https://youtube.com/watch?v=VIDEO_ID`
+    - `GET /api/v2/videos/download/vrchat?url=https://youtu.be/VIDEO_ID&quality=720p&player=avpro`
+    
+    **VRChat & Unity Optimizations:**
+    - Safe filename sanitization (removes apostrophes and special chars)
+    - MP4 format prioritization for better compatibility
+    - Enhanced error handling for VRChat-specific issues
+    - Unity player-specific codec optimization (AVPro Video, Unity Video Player)
+    
+    **Player Options:**
+    - `avpro` - AVPro Video optimized (H.264 baseline, AAC audio)
+    - `unity` - Unity Video Player optimized (broader codec support)
+    - `auto` - Automatic detection based on format availability
+    
+    **Returns:** Redirect to streaming proxy with download headers
+    """
+    try:
+        # Validate URL format
+        from app.routes.simple import extract_video_id_from_url
+        platform, video_id = extract_video_id_from_url(url)
+        
+        # Generate VRChat-compatible filename if not provided
+        if not filename:
+            try:
+                # Get video info for filename generation
+                video_info = await video_service.get_video_info(url)
+                title = video_info.title or f"{platform}_{video_id}"
+                # Use VRChat-compatible filename sanitization
+                safe_title = video_service._sanitize_filename_for_vrchat(title)
+                filename = f"{safe_title}.mp4"
+            except Exception as e:
+                logger.debug(f"Could not get video info for filename: {e}")
+                filename = f"{platform}_{video_id}_vrchat.mp4"
+        
+        # Map quality parameter for VRChat compatibility
+        quality_map = {
+            "best": "highest",
+            "720p": "720p", 
+            "480p": "480p",
+            "360p": "360p"
+        }
+        mapped_quality = quality_map.get(quality, "720p")  # Default to 720p for VRChat
+        
+        # Redirect to streaming proxy with VRChat-optimized parameters
+        proxy_url = f"/api/v2/stream/proxy/{platform}/{video_id}"
+        params = f"?quality={mapped_quality}&download=true&filename={filename}&player={player}"
+        
+        return RedirectResponse(url=proxy_url + params, status_code=302)
+        
+    except UnsupportedURLError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error processing VRChat download: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to process VRChat download: {str(e)}")

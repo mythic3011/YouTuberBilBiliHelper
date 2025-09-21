@@ -82,9 +82,9 @@ config/auth.json
 .env.local
 .env.production
 
-# Temporary files
-downloads/temp/*
-data/temp/*
+# Downloads and temporary files
+downloads/*
+!downloads/.gitkeep
 *.tmp
 *.temp
 
@@ -99,6 +99,7 @@ data/temp/*
 
 # Redis dump
 dump.rdb
+*.dfs
 
 # Docker
 .dockerignore
@@ -108,3 +109,16 @@ dump.rdb
 .mypy_cache/
 .coverage
 htmlcov/
+
+# UV specific (keep these for reproducible builds)
+# .python-version  # Keep this for UV
+# uv.lock          # Keep this for reproducible builds
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Documentation drafts
+docs/drafts/
+*.draft.md

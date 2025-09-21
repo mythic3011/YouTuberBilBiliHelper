@@ -15,6 +15,8 @@ from app.exceptions import (
 from app.services.storage_service import storage_service
 from app.services.redis_service import redis_service
 from app.services.auth_service import auth_service
+from app.services.concurrent_download_manager import concurrent_download_manager
+from app.services.bilibili_concurrent_manager import bilibili_concurrent_manager
 import logging
 
 logger = logging.getLogger(__name__)
@@ -81,6 +83,33 @@ class VideoService:
                 detail="Supported platforms: YouTube, BiliBili, Twitch, Instagram, Twitter"
             )
     
+    def _sanitize_filename_for_vrchat(self, filename: str) -> str:
+        """Sanitize filename to be VRChat-compatible (no apostrophes, special chars)."""
+        import re
+        import unicodedata
+        
+        # Remove apostrophes and other problematic characters for VRChat
+        filename = filename.replace("'", "").replace('"', "")
+        filename = filename.replace("'", "").replace("'", "")  # Smart quotes
+        filename = filename.replace(""", "").replace(""", "")  # Smart double quotes
+        
+        # Normalize unicode characters (e.g., É → E)
+        filename = unicodedata.normalize('NFD', filename)
+        filename = ''.join(c for c in filename if unicodedata.category(c) != 'Mn')
+        
+        # Replace other problematic characters
+        filename = re.sub(r'[<>:"|?*]', '', filename)  # Windows forbidden chars
+        filename = re.sub(r'[^\w\s\-_\.]', '', filename, flags=re.ASCII)  # Keep only ASCII safe chars
+        filename = re.sub(r'\s+', '_', filename)  # Replace spaces with underscores
+        filename = re.sub(r'_{2,}', '_', filename)  # Replace multiple underscores
+        filename = filename.strip('_')  # Remove leading/trailing underscores
+        
+        # Ensure filename is not empty
+        if not filename:
+            filename = "video"
+        
+        return filename
+    
     async def get_video_info(self, url: str) -> VideoInfo:
         """Extract video information without downloading."""
         try:
@@ -96,12 +125,22 @@ class VideoService:
                 # Continue without cache if Redis unavailable
                 pass
             
-            # Base yt-dlp options
+            # VRChat-compatible base yt-dlp options
             ydl_opts = {
                 'quiet': True,
                 'no_warnings': True,
                 'noplaylist': True,
                 'extract_flat': False,
+                # VRChat compatibility improvements
+                'no_color': True,
+                'prefer_ffmpeg': True,
+                'merge_output_format': 'mp4',
+                'retries': 3,
+                'fragment_retries': 3,
+                'socket_timeout': 30,
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
             }
             
             # Add authentication options if available
@@ -182,12 +221,39 @@ class VideoService:
         quality: VideoQuality = VideoQuality.HIGHEST,
         format_type: VideoFormat = VideoFormat.MP4,
         audio_only: bool = False,
-        custom_filename: Optional[str] = None
+        custom_filename: Optional[str] = None,
+        user_session: Optional[str] = None
     ) -> str:
-        """Start video download and return task ID."""
+        """Start video download with concurrent access management and return task ID."""
         
         platform = self._validate_url(url)
-        task_id = str(uuid.uuid4())
+        
+        # Generate user session if not provided
+        if not user_session:
+            user_session = str(uuid.uuid4())
+        
+        # Check if this is a Bilibili URL and use specialized manager
+        if platform == "bilibili":
+            logger.info(f"Using Bilibili-specific concurrent manager for {url}")
+            job_id = await bilibili_concurrent_manager.handle_bilibili_download(
+                url=url,
+                quality=quality.value,
+                format_type=format_type.value,
+                user_session=user_session,
+                custom_filename=custom_filename
+            )
+        else:
+            # Use general concurrent download manager for other platforms
+            job_id = await concurrent_download_manager.submit_download_job(
+                url=url,
+                quality=quality.value,
+                format_type=format_type.value,
+                user_session=user_session,
+                custom_filename=custom_filename
+            )
+        
+        # Use job_id as task_id for consistency
+        task_id = job_id
         
         # Create task info
         task_info = TaskInfo(
@@ -195,21 +261,115 @@ class VideoService:
             status=TaskStatus.PENDING,
             created_at=time.strftime('%Y-%m-%d %H:%M:%S'),
             updated_at=time.strftime('%Y-%m-%d %H:%M:%S'),
-            message="Download queued"
+            message="Download queued for concurrent processing"
         )
         
         # Store task info in Redis
         await redis_service.set_json(f"task:{task_id}", task_info.dict(), ttl=86400)  # 24 hours
         
-        # Start download task
+        # Start download task with concurrent management
         download_task = asyncio.create_task(
-            self._download_video(
+            self._concurrent_download_video(
                 task_id, url, platform, quality, format_type, audio_only, custom_filename
             )
         )
         self._active_downloads[task_id] = download_task
         
         return task_id
+    
+    async def _concurrent_download_video(
+        self,
+        task_id: str,
+        url: str,
+        platform: str,
+        quality: VideoQuality,
+        format_type: VideoFormat,
+        audio_only: bool,
+        custom_filename: Optional[str]
+    ) -> None:
+        """Download video with concurrent access management (background task)."""
+        
+        try:
+            # Process through concurrent download manager
+            result = await concurrent_download_manager.process_download_job(
+                job_id=task_id,
+                download_func=self._execute_download,
+                platform=platform,
+                quality=quality,
+                format_type=format_type,
+                audio_only=audio_only,
+                custom_filename=custom_filename
+            )
+            
+            # Update task status with result
+            if result["status"] == "completed":
+                await self._update_task_status(
+                    task_id,
+                    TaskStatus.COMPLETED,
+                    f"Download completed: {result['unique_filename']}" + (" (reused existing)" if result.get('reused') else ""),
+                    download_url=f"/api/v2/files/{Path(result['file_path']).name}"
+                )
+            else:
+                await self._update_task_status(
+                    task_id,
+                    TaskStatus.FAILED,
+                    "Download failed"
+                )
+                
+        except Exception as e:
+            logger.error(f"Concurrent download failed for task {task_id}: {e}")
+            await self._update_task_status(
+                task_id,
+                TaskStatus.FAILED,
+                f"Download failed: {str(e)}"
+            )
+        finally:
+            # Clean up from active downloads
+            if task_id in self._active_downloads:
+                del self._active_downloads[task_id]
+    
+    async def _execute_download(
+        self,
+        url: str,
+        platform: str,
+        quality: VideoQuality,
+        format_type: VideoFormat,
+        audio_only: bool,
+        custom_filename: Optional[str],
+        output_path: str,
+        unique_filename: str,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Execute the actual download with unique filename."""
+        
+        # Get video info
+        video_info = await self.get_video_info(url)
+        
+        # Build yt-dlp options with unique output path
+        ydl_opts = self._build_ydl_options(
+            quality=quality,
+            format_type=format_type,
+            audio_only=audio_only,
+            output_path=output_path,
+            unity_player="auto"
+        )
+        
+        # Use unique filename template
+        output_dir = Path(output_path).parent
+        filename_template = f"{Path(unique_filename).stem}.%(ext)s"
+        ydl_opts['outtmpl'] = str(output_dir / filename_template)
+        
+        # Execute download
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, self._download_with_ydl, url, ydl_opts
+        )
+        
+        return {
+            "success": True,
+            "file_path": output_path,
+            "unique_filename": unique_filename
+        }
     
     async def _download_video(
         self,
@@ -246,8 +406,18 @@ class VideoService:
                 # Ensure storage is available
                 await storage_service.ensure_storage_available()
                 
-                # Prepare download options
-                filename = custom_filename or f"{video_info.id}.%(ext)s"
+                # Prepare VRChat-compatible download options
+                if custom_filename:
+                    # Sanitize custom filename for VRChat compatibility
+                    base_name = Path(custom_filename).stem
+                    extension = Path(custom_filename).suffix or ".mp4"
+                    safe_name = self._sanitize_filename_for_vrchat(base_name)
+                    filename = f"{safe_name}{extension}"
+                else:
+                    # Create VRChat-compatible filename from video info
+                    safe_title = self._sanitize_filename_for_vrchat(video_info.title or video_info.id)
+                    filename = f"{safe_title}.%(ext)s"
+                
                 output_path = storage_service.get_file_path(platform, filename)
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 
@@ -316,19 +486,40 @@ class VideoService:
         output_template: str,
         quality: VideoQuality,
         format_type: VideoFormat,
-        audio_only: bool
+        audio_only: bool,
+        unity_player: str = "auto"
     ) -> Dict[str, Any]:
-        """Build yt-dlp options based on parameters."""
+        """Build yt-dlp options based on parameters with VRChat compatibility."""
         
+        # VRChat-compatible base options
         opts = {
             'outtmpl': output_template,
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
+            # VRChat compatibility fixes
+            'writeinfojson': False,  # Avoid extra files
+            'writesubtitles': False,  # Avoid subtitle files
+            'writeautomaticsub': False,  # Avoid automatic subtitles
+            'ignoreerrors': False,  # Don't ignore errors for VRChat compatibility
+            'no_color': True,  # Avoid color codes in output
+            'extract_flat': False,  # Ensure full extraction
+            # Format selection for VRChat compatibility
+            'merge_output_format': 'mp4',  # Always merge to MP4 for VRChat
+            'prefer_ffmpeg': True,  # Use ffmpeg for better compatibility
+            # Network settings for stability
+            'retries': 3,  # Retry failed downloads
+            'fragment_retries': 3,  # Retry failed fragments
+            'socket_timeout': 30,  # Increase timeout
+            # User agent for better compatibility
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
         }
         
         if audio_only:
-            opts['format'] = 'bestaudio/best'
+            # VRChat-compatible audio formats
+            opts['format'] = 'bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio/best'
             if format_type in [VideoFormat.MP3, VideoFormat.M4A]:
                 opts['postprocessors'] = [{
                     'key': 'FFmpegExtractAudio',
@@ -336,24 +527,64 @@ class VideoService:
                     'preferredquality': '192',
                 }]
         else:
-            # Video formats
-            if quality == VideoQuality.HIGHEST:
-                format_selector = f'best[ext={format_type.value}]/best'
-            elif quality == VideoQuality.LOWEST:
-                format_selector = f'worst[ext={format_type.value}]/worst'
-            elif quality == VideoQuality.BEST_VIDEO:
-                format_selector = f'bestvideo[ext={format_type.value}]/bestvideo'
+            # Unity player-specific video formats
+            if unity_player == "avpro":
+                # AVPro Video optimized formats (H.264 baseline profile preferred)
+                if quality == VideoQuality.HIGHEST:
+                    format_selector = 'best[height<=720][ext=mp4][vcodec^=avc1]/best[height<=720][ext=mp4][vcodec*=h264]/best[ext=mp4]'
+                elif quality == VideoQuality.LOWEST:
+                    format_selector = 'worst[ext=mp4][vcodec^=avc1]/worst[ext=mp4][vcodec*=h264]/worst[ext=mp4]'
+                elif quality == VideoQuality.BEST_VIDEO:
+                    format_selector = 'bestvideo[height<=720][ext=mp4][vcodec^=avc1]/bestvideo[ext=mp4][vcodec*=h264]/bestvideo[ext=mp4]'
+                else:
+                    format_selector = 'best[height<=480][ext=mp4][vcodec^=avc1]/best[height<=480][ext=mp4][vcodec*=h264]/best[ext=mp4]'
+            elif unity_player == "unity":
+                # Unity Video Player optimized (broader codec support)
+                if quality == VideoQuality.HIGHEST:
+                    format_selector = 'best[ext=mp4]/best[ext=webm]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best'
+                elif quality == VideoQuality.LOWEST:
+                    format_selector = 'worst[ext=mp4]/worst[ext=webm]/worstvideo[ext=mp4]+bestaudio[ext=m4a]/worst'
+                elif quality == VideoQuality.BEST_VIDEO:
+                    format_selector = 'bestvideo[ext=mp4]/bestvideo[ext=webm]/bestvideo'
+                else:
+                    format_selector = 'best[height<=720][ext=mp4]/best[height<=720][ext=webm]/best[ext=mp4]/best[ext=webm]/best'
             else:
-                format_selector = f'best[ext={format_type.value}]/best'
+                # Auto/Default VRChat-compatible format with quality limit
+                format_selector = 'best[height<=720][ext=mp4]/best[height<=720][ext=webm]/best[ext=mp4]/best[ext=webm]/best'
             
             opts['format'] = format_selector
+            
+            # Ensure final output is MP4 for VRChat compatibility
+            if format_type == VideoFormat.MP4:
+                opts['postprocessors'] = [{
+                    'key': 'FFmpegVideoConvertor',
+                    'preferedformat': 'mp4',
+                }]
         
         return opts
     
     def _download_with_ydl(self, url: str, ydl_opts: Dict[str, Any]) -> None:
-        """Download using yt-dlp (runs in executor)."""
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+        """Download using yt-dlp with VRChat compatibility (runs in executor)."""
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+        except yt_dlp.DownloadError as e:
+            error_msg = str(e).lower()
+            # VRChat-specific error handling
+            if "failed to configure url resolver" in error_msg:
+                raise DownloadError(
+                    "VRChat URL resolver failed. This may be due to antivirus software blocking yt-dlp.exe. "
+                    "Please add an exclusion for yt-dlp.exe in your antivirus settings."
+                )
+            elif "apostrophe" in error_msg or "'" in error_msg:
+                raise DownloadError(
+                    "File path contains apostrophes which break VRChat's yt-dlp. "
+                    "Please ensure your file paths don't contain apostrophes or special characters."
+                )
+            else:
+                raise DownloadError(f"Download failed: {str(e)}")
+        except Exception as e:
+            raise DownloadError(f"Unexpected download error: {str(e)}")
     
     async def _update_task_status(
         self,
@@ -442,13 +673,22 @@ class VideoService:
             # Select format based on quality
             format_selector = self._get_format_selector(quality)
             
-            # Base yt-dlp options
+            # VRChat-compatible base yt-dlp options for streaming
             ydl_opts = {
                 'quiet': True,
                 'no_warnings': True,
                 'noplaylist': True,
                 'extract_flat': False,
                 'format': format_selector,
+                # VRChat compatibility improvements
+                'no_color': True,
+                'prefer_ffmpeg': True,
+                'retries': 3,
+                'fragment_retries': 3,
+                'socket_timeout': 30,
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
             }
             
             # Add authentication options if available

@@ -858,7 +858,7 @@ dependencies = [
     { name = "yt-dlp" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 dev = [
     { name = "httpx" },
     { name = "pytest" },
@@ -869,17 +869,20 @@ dev = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.9.0" },
     { name = "fastapi", specifier = ">=0.104.1" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.25.2" },
     { name = "psutil", specifier = ">=5.9.6" },
     { name = "pydantic", specifier = ">=2.5.0" },
     { name = "pydantic-settings", specifier = ">=2.1.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.3" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.1" },
     { name = "redis", specifier = ">=5.0.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.24.0" },
     { name = "yt-dlp", specifier = ">=2023.12.30" },
 ]
-provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "httpx", specifier = ">=0.25.2" },
+    { name = "pytest", specifier = ">=7.4.3" },
+    { name = "pytest-asyncio", specifier = ">=0.21.1" },
+]
 
 [[package]]
 name = "yt-dlp"

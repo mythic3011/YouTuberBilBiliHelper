@@ -113,6 +113,22 @@ app.include_router(auth.router)
 from app.routes import simple
 app.include_router(simple.router)
 
+# Include VRChat-optimized router
+from app.routes import vrchat
+app.include_router(vrchat.router)
+
+# Include enhanced API v3 routers
+from app.routes import meta, videos_v3, streaming_v3, concurrent
+app.include_router(meta.router)
+app.include_router(videos_v3.router)
+app.include_router(streaming_v3.router)
+app.include_router(concurrent.router)
+
+# Include new enterprise-grade media management routers
+from app.routes import media_management, content_processing
+app.include_router(media_management.router)
+app.include_router(content_processing.router)
+
 
 # Exception handlers
 @app.exception_handler(APIException)
@@ -273,20 +289,18 @@ async def root():
         "redoc_url": "/redoc",
         "openapi_url": "/openapi.json",
         "health_url": "/api/health",
-        "simple_endpoints": {
-            "stream": "/api/stream?url=VIDEO_URL",
-            "info": "/api/info?url=VIDEO_URL", 
-            "download": "/api/download?url=VIDEO_URL",
-            "formats": "/api/formats?url=VIDEO_URL",
-            "embed": "/api/embed?url=VIDEO_URL",
-            "platforms": "/api/platforms"
+        "media_endpoints": {
+            "content_analysis": "/api/media/details?url=CONTENT_URL",
+            "format_conversion": "/api/media/format/convert?url=CONTENT_URL&target_quality=720p",
+            "batch_processing": "/api/content/process/queue?source_url=CONTENT_URL",
+            "performance_analytics": "/api/content/analytics/performance"
         },
         "examples": {
-            "youtube_stream": "/api/stream?url=https://youtu.be/dQw4w9WgXcQ",
-            "youtube_info": "/api/info?url=https://youtu.be/dQw4w9WgXcQ",
-            "youtube_download": "/api/download?url=https://youtu.be/dQw4w9WgXcQ&quality=720p"
+            "media_analysis": "/api/media/details?url=https://example.com/content&include_formats=true",
+            "content_optimization": "/api/content/stream/optimize?source=platform/content_id&quality=high",
+            "format_discovery": "/api/media/format/available?url=https://example.com/content"
         },
-        "supported_platforms": ["YouTube", "BiliBili", "Twitch", "Instagram", "Twitter"],
+        "supported_platforms": ["Major Video Platforms", "Social Media Platforms", "Live Streaming Services", "Educational Platforms"],
         "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')
     }
 

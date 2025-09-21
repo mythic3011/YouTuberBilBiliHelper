@@ -23,6 +23,30 @@ class VideoFormat(str, Enum):
     M4A = "m4a"  # Audio only
 
 
+class UnityPlayerType(str, Enum):
+    """Unity video player types for optimization."""
+    AVPRO = "avpro"
+    UNITY_VIDEO = "unity_video"
+    AUTO = "auto"
+
+
+class VideoCodec(str, Enum):
+    """Video codecs for Unity/AVPro compatibility."""
+    H264 = "h264"
+    H265 = "h265"
+    VP8 = "vp8"
+    VP9 = "vp9"
+    AV1 = "av1"
+
+
+class AudioCodec(str, Enum):
+    """Audio codecs for Unity/AVPro compatibility."""
+    AAC = "aac"
+    MP3 = "mp3"
+    OPUS = "opus"
+    VORBIS = "vorbis"
+
+
 class DownloadRequest(BaseModel):
     """Request model for video downloads."""
     url: HttpUrl

@@ -27,12 +27,6 @@ dependencies = [
     "psutil>=5.9.6",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.4.3",
-    "pytest-asyncio>=0.21.1",
-    "httpx>=0.25.2",
-]
 
 [project.urls]
 Homepage = "https://github.com/mythic3011/YouTuberBilBiliHelper"
@@ -42,6 +36,16 @@ Issues = "https://github.com/mythic3011/YouTuberBilBiliHelper/issues"
 [project.scripts]
 youtuberbilbilihelper = "app.main:app"
 
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.4.3",
+    "pytest-asyncio>=0.21.1", 
+    "httpx>=0.25.2",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
 [build-system]
-requires = ["uv_build>=0.8.12,<0.9.0"]
-build-backend = "uv_build"
+requires = ["hatchling"]
+build-backend = "hatchling.build"

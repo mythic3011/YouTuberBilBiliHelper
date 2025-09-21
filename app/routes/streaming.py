@@ -83,7 +83,19 @@ async def proxy_video_stream(
         if download:
             if not filename:
                 filename = f"{platform}_{video_id}.mp4"
-            headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+            
+            # Properly encode filename for Content-Disposition header
+            # Use RFC 5987 encoding for Unicode filenames
+            import urllib.parse
+            try:
+                # Try ASCII first (fastest)
+                filename.encode('ascii')
+                headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+            except UnicodeEncodeError:
+                # Use RFC 5987 encoding for Unicode filenames
+                encoded_filename = urllib.parse.quote(filename.encode('utf-8'))
+                headers['Content-Disposition'] = f"attachment; filename*=UTF-8''{encoded_filename}"
+            
             headers['Content-Description'] = 'File Transfer'
         
         # Create streaming response
