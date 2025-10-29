@@ -80,7 +80,7 @@ cmd_start() {
             if check_port $PYTHON_API_PORT; then
                 print_warning "Python API already running on port $PYTHON_API_PORT"
             else
-                docker-compose up -d python-api redis
+                docker-compose up -d python-api dragonfly
                 print_success "Python API started"
                 print_info "Access at: http://localhost:$PYTHON_API_PORT"
                 print_info "API Docs: http://localhost:$PYTHON_API_PORT/docs"
@@ -163,8 +163,8 @@ cmd_dev() {
     fi
 
     # Start services
-    print_info "Starting Redis..."
-    docker-compose up -d redis
+    print_info "Starting DragonflyDB (Redis-compatible cache)..."
+    docker-compose up -d dragonfly
 
     # Run the application
     print_info "Starting Python API in development mode..."
@@ -274,7 +274,7 @@ cmd_test() {
         integration)
             print_info "Running integration tests..."
             # Start services if needed
-            docker-compose up -d redis
+            docker-compose up -d dragonfly
             sleep 2
             pytest tests/integration/ -v --tb=short
             ;;
@@ -310,7 +310,7 @@ cmd_deploy() {
     case "$target" in
         python|py)
             print_info "Deploying Python API..."
-            docker-compose -f docker-compose.yml up -d python-api redis
+            docker-compose -f docker-compose.yml up -d python-api dragonfly
             print_success "Python API deployed"
             ;;
         go)
@@ -382,11 +382,11 @@ cmd_status() {
 
     echo ""
 
-    # Check Redis
+    # Check DragonflyDB
     if check_port $REDIS_PORT; then
-        print_success "Redis: Running on port $REDIS_PORT"
+        print_success "DragonflyDB: Running on port $REDIS_PORT"
     else
-        print_warning "Redis: Not running"
+        print_warning "DragonflyDB: Not running"
     fi
 
     echo ""
@@ -410,9 +410,9 @@ cmd_logs() {
             print_info "Go API logs (Ctrl+C to exit):"
             cd go-api && docker-compose logs -f && cd ..
             ;;
-        redis)
-            print_info "Redis logs (Ctrl+C to exit):"
-            docker-compose logs -f redis
+        redis|dragonfly)
+            print_info "DragonflyDB logs (Ctrl+C to exit):"
+            docker-compose logs -f dragonfly
             ;;
         all)
             print_info "All logs (Ctrl+C to exit):"
@@ -446,9 +446,9 @@ cmd_shell() {
             print_info "Opening Go API shell..."
             cd go-api && docker-compose exec go-api /bin/sh && cd .. || print_error "Go API not running"
             ;;
-        redis)
-            print_info "Opening Redis CLI..."
-            docker-compose exec redis redis-cli
+        redis|dragonfly)
+            print_info "Opening DragonflyDB CLI (Redis-compatible)..."
+            docker-compose exec dragonfly redis-cli
             ;;
         *)
             print_error "Unknown service: $service"
@@ -513,6 +513,7 @@ REQUIREMENTS:
     - uv (recommended): curl -LsSf https://astral.sh/uv/install.sh | sh
     - OR Python 3.12+ with pip
     - Docker & Docker Compose
+    - DragonflyDB (Redis-compatible, included in Docker setup)
 
 COMMANDS:
 
@@ -536,8 +537,8 @@ COMMANDS:
 
   Maintenance:
     clean [level]     Clean project (cache|temp|docker|all)
-    logs [service]    View logs (python|go|redis|all)
-    shell [service]   Open shell (python|go|redis)
+    logs [service]    View logs (python|go|dragonfly|all)
+    shell [service]   Open shell (python|go|dragonfly)
     status            Check service status
 
   Information:
