@@ -1,0 +1,72 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+main
+video-api
+video-api-go
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.txt
+coverage.html
+
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+# Build artifacts
+bin/
+dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Downloads
+downloads/youtube/*
+downloads/bilibili/*
+downloads/instagram/*
+downloads/twitter/*
+downloads/twitch/*
+downloads/temp/*
+!downloads/*/.gitkeep
+
+# Config secrets
+config/cookies/*.txt
+!config/cookies/*_template.txt
+
+# Local development
+.env
+.env.local
+*.local
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
