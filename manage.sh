@@ -70,10 +70,10 @@ check_port() {
 
 cmd_start() {
     print_header "Starting $PROJECT_NAME"
-    
+
     # Check which API to start
     local api="${1:-python}"
-    
+
     case "$api" in
         python|py)
             print_info "Starting Python API on port $PYTHON_API_PORT..."
@@ -113,35 +113,59 @@ cmd_start() {
 
 cmd_dev() {
     print_header "Starting Development Environment"
-    
-    # Check Python
-    if ! check_command python3; then
-        print_error "Python 3 is required"
+
+    # Check if uv is installed
+    if check_command uv; then
+        print_info "Using uv package manager..."
+
+        # Create/sync environment with uv
+        if [ ! -d ".venv" ]; then
+            print_info "Creating virtual environment with uv..."
+            uv venv
+            print_success "Virtual environment created"
+        fi
+
+        # Install dependencies with uv
+        print_info "Installing dependencies with uv..."
+        uv pip install -e .
+        uv pip install -r requirements-dev.txt
+        print_success "Dependencies installed"
+
+        # Activate virtual environment
+        source .venv/bin/activate
+
+    elif check_command python3; then
+        print_info "Using pip (uv not found)..."
+
+        # Check if virtual environment exists
+        if [ ! -d ".venv" ]; then
+            print_info "Creating virtual environment..."
+            python3 -m venv .venv
+            print_success "Virtual environment created"
+        fi
+
+        # Activate virtual environment
+        print_info "Activating virtual environment..."
+        source .venv/bin/activate
+
+        # Install dependencies
+        print_info "Installing dependencies..."
+        pip install -q --upgrade pip
+        pip install -q -e .
+        pip install -q -r requirements-dev.txt
+        print_success "Dependencies installed"
+
+    else
+        print_error "Neither uv nor Python 3 is installed"
+        print_info "Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh"
+        print_info "Or install Python 3: https://www.python.org/downloads/"
         exit 1
     fi
-    
-    # Check if virtual environment exists
-    if [ ! -d ".venv" ]; then
-        print_info "Creating virtual environment..."
-        python3 -m venv .venv
-        print_success "Virtual environment created"
-    fi
-    
-    # Activate virtual environment
-    print_info "Activating virtual environment..."
-    source .venv/bin/activate
-    
-    # Install dependencies
-    print_info "Installing dependencies..."
-    pip install -q --upgrade pip
-    pip install -q -e .
-    pip install -q -r requirements-dev.txt
-    print_success "Dependencies installed"
-    
+
     # Start services
     print_info "Starting Redis..."
     docker-compose up -d redis
-    
+
     # Run the application
     print_info "Starting Python API in development mode..."
     print_success "Development environment ready!"
@@ -150,15 +174,15 @@ cmd_dev() {
     print_info "API Docs: http://localhost:$PYTHON_API_PORT/docs"
     print_info ""
     print_info "Press Ctrl+C to stop"
-    
+
     uvicorn app.main:app --reload --host 0.0.0.0 --port $PYTHON_API_PORT
 }
 
 cmd_build() {
     print_header "Building Docker Images"
-    
+
     local target="${1:-all}"
-    
+
     case "$target" in
         python|py)
             print_info "Building Python API image..."
@@ -186,9 +210,9 @@ cmd_build() {
 
 cmd_clean() {
     print_header "Cleaning Project"
-    
+
     local level="${1:-normal}"
-    
+
     case "$level" in
         cache)
             print_info "Cleaning Python cache files..."
@@ -233,15 +257,15 @@ cmd_clean() {
 
 cmd_test() {
     print_header "Running Tests"
-    
+
     local test_type="${1:-all}"
-    
+
     # Ensure we're in virtual environment or have pytest
     if ! check_command pytest; then
         print_error "pytest not found. Run: pip install pytest"
         exit 1
     fi
-    
+
     case "$test_type" in
         unit)
             print_info "Running unit tests..."
@@ -277,12 +301,12 @@ cmd_test() {
 
 cmd_deploy() {
     print_header "Deploying $PROJECT_NAME"
-    
+
     local target="${1:-go}"
-    
+
     print_warning "Deploying to production..."
     print_info "Target: $target"
-    
+
     case "$target" in
         python|py)
             print_info "Deploying Python API..."
@@ -306,28 +330,28 @@ cmd_deploy() {
             exit 1
             ;;
     esac
-    
+
     sleep 3
     cmd_status
 }
 
 cmd_stop() {
     print_header "Stopping Services"
-    
+
     print_info "Stopping Python API..."
     docker-compose down 2>/dev/null || true
-    
+
     print_info "Stopping Go API..."
     cd go-api && docker-compose down 2>/dev/null || true && cd ..
-    
+
     print_success "All services stopped"
 }
 
 cmd_restart() {
     print_header "Restarting Services"
-    
+
     local target="${1:-both}"
-    
+
     cmd_stop
     sleep 2
     cmd_start "$target"
@@ -335,7 +359,7 @@ cmd_restart() {
 
 cmd_status() {
     print_header "Service Status"
-    
+
     # Check Python API
     if check_port $PYTHON_API_PORT; then
         print_success "Python API: Running on port $PYTHON_API_PORT"
@@ -344,9 +368,9 @@ cmd_status() {
     else
         print_warning "Python API: Not running"
     fi
-    
+
     echo ""
-    
+
     # Check Go API
     if check_port $GO_API_PORT; then
         print_success "Go API: Running on port $GO_API_PORT"
@@ -355,18 +379,18 @@ cmd_status() {
     else
         print_warning "Go API: Not running"
     fi
-    
+
     echo ""
-    
+
     # Check Redis
     if check_port $REDIS_PORT; then
         print_success "Redis: Running on port $REDIS_PORT"
     else
         print_warning "Redis: Not running"
     fi
-    
+
     echo ""
-    
+
     # Docker containers
     print_info "Docker Containers:"
     docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "video-api|redis|NAME" || print_warning "No containers running"
@@ -374,9 +398,9 @@ cmd_status() {
 
 cmd_logs() {
     print_header "Viewing Logs"
-    
+
     local service="${1:-all}"
-    
+
     case "$service" in
         python|py)
             print_info "Python API logs (Ctrl+C to exit):"
@@ -410,9 +434,9 @@ cmd_logs() {
 
 cmd_shell() {
     print_header "Opening Shell"
-    
+
     local service="${1:-python}"
-    
+
     case "$service" in
         python|py)
             print_info "Opening Python API shell..."
@@ -436,7 +460,7 @@ cmd_shell() {
 
 cmd_bench() {
     print_header "Running Performance Benchmark"
-    
+
     if [ -f "scripts/compare_apis.sh" ]; then
         ./scripts/compare_apis.sh
     else
@@ -448,28 +472,28 @@ cmd_bench() {
 
 cmd_lint() {
     print_header "Running Code Quality Checks"
-    
+
     print_info "Running ruff..."
     ruff check app/ tests/ || true
-    
+
     print_info "Running black..."
     black --check app/ tests/ || true
-    
+
     print_info "Running mypy..."
     mypy app/ || true
-    
+
     print_success "Linting completed"
 }
 
 cmd_format() {
     print_header "Formatting Code"
-    
+
     print_info "Formatting with black..."
     black app/ tests/
-    
+
     print_info "Sorting imports with isort..."
     isort app/ tests/ || true
-    
+
     print_success "Code formatted"
 }
 
@@ -478,11 +502,17 @@ cmd_help() {
 ╔════════════════════════════════════════════════════════════════╗
 ║                                                                ║
 ║            YouTuberBilBiliHelper - Project Manager            ║
+║           (Optimized for uv package manager)                  ║
 ║                                                                ║
 ╚════════════════════════════════════════════════════════════════╝
 
 USAGE:
     ./manage.sh <command> [options]
+
+REQUIREMENTS:
+    - uv (recommended): curl -LsSf https://astral.sh/uv/install.sh | sh
+    - OR Python 3.12+ with pip
+    - Docker & Docker Compose
 
 COMMANDS:
 
@@ -557,7 +587,7 @@ EOF
 main() {
     local command="${1:-help}"
     shift || true
-    
+
     case "$command" in
         start)          cmd_start "$@" ;;
         dev|develop)    cmd_dev "$@" ;;
@@ -585,4 +615,3 @@ main() {
 
 # Run main function
 main "$@"
-
