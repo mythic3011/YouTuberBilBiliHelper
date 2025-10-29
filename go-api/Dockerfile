@@ -30,8 +30,8 @@ RUN apk --no-cache add \
     curl \
     tzdata
 
-# Install yt-dlp
-RUN pip3 install --no-cache-dir yt-dlp
+# Install yt-dlp (Alpine Linux requires --break-system-packages)
+RUN pip3 install --no-cache-dir --break-system-packages yt-dlp
 
 # Create app user
 RUN addgroup -g 1000 appuser && \
