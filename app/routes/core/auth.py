@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
-from app.services.auth_service import auth_service
+from app.services.core.auth_service import auth_service
 import logging
 
 logger = logging.getLogger(__name__)

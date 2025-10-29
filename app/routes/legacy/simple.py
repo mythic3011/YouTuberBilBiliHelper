@@ -6,7 +6,7 @@ from typing import Optional, Literal
 from urllib.parse import urlparse, parse_qs
 import re
 
-from app.services.video_service import VideoService
+from app.services.core.video_service import VideoService
 from app.services.streaming_service import StreamingService
 from app.exceptions import UnsupportedURLError, VideoNotFoundError
 from app.models import VideoQuality

@@ -5,8 +5,8 @@ import psutil
 from fastapi import APIRouter, HTTPException
 from app.models import HealthResponse, StorageInfo, ErrorResponse
 from app.config import settings
-from app.services.redis_service import redis_service
-from app.services.storage_service import storage_service
+from app.services.infrastructure.redis_service import redis_service
+from app.services.infrastructure.storage_service import storage_service
 import logging
 
 logger = logging.getLogger(__name__)

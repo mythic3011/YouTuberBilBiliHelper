@@ -6,9 +6,9 @@ from fastapi import APIRouter, HTTPException, Query, Header, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.services.concurrent_download_manager import concurrent_download_manager
-from app.services.bilibili_concurrent_manager import bilibili_concurrent_manager
-from app.services.video_service import video_service
+from app.services.download.concurrent_manager import concurrent_download_manager
+from app.services.download.bilibili_manager import bilibili_concurrent_manager
+from app.services.core.video_service import video_service
 from app.models import VideoQuality, VideoFormat, ErrorResponse
 import logging
 

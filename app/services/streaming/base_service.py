@@ -7,8 +7,8 @@ from typing import Optional, Dict, Any, AsyncGenerator
 from urllib.parse import urlparse
 import aiohttp
 from app.config import settings
-from app.services.redis_service import redis_service
-from app.services.video_service import video_service
+from app.services.infrastructure.redis_service import redis_service
+from app.services.core.video_service import video_service
 from app.exceptions import VideoNotFoundError, ServiceUnavailableError
 import logging
 

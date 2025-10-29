@@ -7,8 +7,8 @@ from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, HttpUrl
 
-from app.services.video_service import video_service
-from app.services.storage_service import storage_service
+from app.services.core.video_service import video_service
+from app.services.infrastructure.storage_service import storage_service
 from app.exceptions import (
     VideoNotFoundError, DownloadError, UnsupportedURLError,
     ValidationError, TaskNotFoundError

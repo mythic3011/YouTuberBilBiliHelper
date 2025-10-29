@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, Optional, Set, Any, List
 from dataclasses import dataclass
 from app.config import settings
-from app.services.redis_service import redis_service
+from app.services.infrastructure.redis_service import redis_service
 import logging
 
 logger = logging.getLogger(__name__)

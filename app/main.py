@@ -4,22 +4,26 @@ import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import RedirectResponse
 from fastapi.openapi.utils import get_openapi
 
 from app.config import settings
 from app.middleware import rate_limit_middleware, logging_middleware
-from app.routes import videos, files, system
-from app.services.redis_service import redis_service
-from app.services.storage_service import storage_service
-from app.exceptions import (
-    APIException, RateLimitExceededError, StorageLimitExceededError,
-    ValidationError, UnsupportedURLError, VideoNotFoundError,
-    DownloadError, TaskNotFoundError, ServiceUnavailableError
-)
+from app.services.infrastructure.redis_service import redis_service
+from app.services.infrastructure.storage_service import storage_service
+from app.utils.exception_handlers import register_exception_handlers
+
+# Import all routers from organized structure
+from app.routes.core import system_router, auth_router
+from app.routes.videos import info_router, batch_router, concurrent_router as video_concurrent_router, files_router
+from app.routes.streaming import proxy_router, direct_router
+from app.routes.media import management_router, processing_router
+from app.routes.legacy import simple_router, vrchat_router
+
+# Import remaining routers that need migration
+from app.routes import meta, videos_v3, streaming_v3, concurrent
 
 # Configure logging
 logging.basicConfig(
@@ -96,185 +100,44 @@ app.add_middleware(
 app.middleware("http")(rate_limit_middleware)
 app.middleware("http")(logging_middleware)
 
-# Include routers
-app.include_router(videos.router)
-app.include_router(files.router)
-app.include_router(system.router)
 
-# Include new streaming router
-from app.routes import streaming
-app.include_router(streaming.router)
-
-# Include authentication router
-from app.routes import auth
-app.include_router(auth.router)
-
-# Include simple/user-friendly router (highest priority)
-from app.routes import simple
-app.include_router(simple.router)
-
-# Include VRChat-optimized router
-from app.routes import vrchat
-app.include_router(vrchat.router)
-
-# Include enhanced API v3 routers
-from app.routes import meta, videos_v3, streaming_v3, concurrent
-app.include_router(meta.router)
-app.include_router(videos_v3.router)
-app.include_router(streaming_v3.router)
-app.include_router(concurrent.router)
-
-# Include new enterprise-grade media management routers
-from app.routes import media_management, content_processing
-app.include_router(media_management.router)
-app.include_router(content_processing.router)
-
-
-# Exception handlers
-@app.exception_handler(APIException)
-async def api_exception_handler(request: Request, exc: APIException):
-    """Handle custom API exceptions."""
-    logger.error(f"API Exception: {exc.message} - {exc.detail}")
-    return JSONResponse(
-        status_code=400,
-        content={
-            "error": exc.message,
-            "detail": exc.detail,
-            "code": exc.code,
-            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')
-        }
-    )
+# Register all routers in organized manner
+def register_routers(app: FastAPI):
+    """Register all API routers with the FastAPI application."""
+    # Core system routers (health, system info, authentication)
+    app.include_router(system_router)
+    app.include_router(auth_router)
+    
+    # Video operation routers
+    app.include_router(info_router)
+    app.include_router(files_router)
+    app.include_router(batch_router)
+    app.include_router(video_concurrent_router)
+    
+    # Streaming routers
+    app.include_router(direct_router)
+    app.include_router(proxy_router)
+    
+    # Media management routers
+    app.include_router(management_router)
+    app.include_router(processing_router)
+    
+    # Legacy routers (backward compatibility - registered last)
+    app.include_router(simple_router)
+    app.include_router(vrchat_router)
+    
+    # V3 routers (to be migrated to new structure)
+    app.include_router(meta.router)
+    app.include_router(videos_v3.router)
+    app.include_router(streaming_v3.router)
+    app.include_router(concurrent.router)
 
 
-@app.exception_handler(RateLimitExceededError)
-async def rate_limit_exception_handler(request: Request, exc: RateLimitExceededError):
-    """Handle rate limit exceptions."""
-    return JSONResponse(
-        status_code=429,
-        content={
-            "error": exc.message,
-            "detail": exc.detail,
-            "code": exc.code,
-            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')
-        },
-        headers={
-            "Retry-After": str(settings.rate_limit_window)
-        }
-    )
+# Register all routers
+register_routers(app)
 
-
-@app.exception_handler(StorageLimitExceededError)
-async def storage_limit_exception_handler(request: Request, exc: StorageLimitExceededError):
-    """Handle storage limit exceptions."""
-    return JSONResponse(
-        status_code=507,
-        content={
-            "error": exc.message,
-            "detail": exc.detail,
-            "code": exc.code,
-            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')
-        }
-    )
-
-
-@app.exception_handler(ValidationError)
-async def validation_exception_handler(request: Request, exc: ValidationError):
-    """Handle validation exceptions."""
-    return JSONResponse(
-        status_code=400,
-        content={
-            "error": exc.message,
-            "detail": exc.detail,
-            "code": exc.code,
-            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')
-        }
-    )
-
-
-@app.exception_handler(UnsupportedURLError)
-async def unsupported_url_exception_handler(request: Request, exc: UnsupportedURLError):
-    """Handle unsupported URL exceptions."""
-    return JSONResponse(
-        status_code=400,
-        content={
-            "error": exc.message,
-            "detail": exc.detail,
-            "code": exc.code,
-            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')
-        }
-    )
-
-
-@app.exception_handler(VideoNotFoundError)
-async def video_not_found_exception_handler(request: Request, exc: VideoNotFoundError):
-    """Handle video not found exceptions."""
-    return JSONResponse(
-        status_code=404,
-        content={
-            "error": exc.message,
-            "detail": exc.detail,
-            "code": exc.code,
-            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')
-        }
-    )
-
-
-@app.exception_handler(TaskNotFoundError)
-async def task_not_found_exception_handler(request: Request, exc: TaskNotFoundError):
-    """Handle task not found exceptions."""
-    return JSONResponse(
-        status_code=404,
-        content={
-            "error": exc.message,
-            "detail": exc.detail,
-            "code": exc.code,
-            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')
-        }
-    )
-
-
-@app.exception_handler(ServiceUnavailableError)
-async def service_unavailable_exception_handler(request: Request, exc: ServiceUnavailableError):
-    """Handle service unavailable exceptions."""
-    return JSONResponse(
-        status_code=503,
-        content={
-            "error": exc.message,
-            "detail": exc.detail,
-            "code": exc.code,
-            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')
-        }
-    )
-
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    """Handle FastAPI HTTP exceptions."""
-    logger.error(f"HTTP Exception: {exc.detail} (status_code={exc.status_code})")
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": "HTTP Error",
-            "detail": exc.detail,
-            "code": f"HTTP_{exc.status_code}",
-            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')
-        }
-    )
-
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
-    """Handle unexpected exceptions."""
-    logger.error(f"Unexpected error: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": "Internal Server Error",
-            "detail": "An unexpected error occurred",
-            "code": "INTERNAL_ERROR",
-            "timestamp": time.strftime('%Y-%m-%d %H:%M:%S')
-        }
-    )
+# Register exception handlers
+register_exception_handlers(app)
 
 
 # Root endpoint
@@ -310,9 +173,8 @@ async def root():
 async def legacy_raw_link(yt: str):
     """Legacy endpoint for raw video links."""
     try:
-        from app.services.video_service import video_service
+        from app.services.core.video_service import video_service
         stream_url = await video_service.get_stream_url(yt)
-        from fastapi.responses import RedirectResponse
         return RedirectResponse(url=stream_url, status_code=302)
     except Exception as e:
         logger.error(f"Legacy endpoint error: {e}")

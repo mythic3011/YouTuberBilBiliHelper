@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
-from app.services.storage_service import storage_service
+from app.services.infrastructure.storage_service import storage_service
 from app.models import ErrorResponse
 import logging
 

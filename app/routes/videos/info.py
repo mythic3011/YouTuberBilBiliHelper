@@ -10,8 +10,8 @@ from app.models import (
     VideoInfo, TaskInfo, BatchDownloadRequest, BatchDownloadResponse,
     ErrorResponse
 )
-from app.services.video_service import video_service
-from app.services.storage_service import storage_service
+from app.services.core.video_service import video_service
+from app.services.infrastructure.storage_service import storage_service
 from app.exceptions import (
     VideoNotFoundError, DownloadError, UnsupportedURLError,
     ValidationError, TaskNotFoundError

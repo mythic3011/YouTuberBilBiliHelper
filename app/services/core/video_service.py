@@ -12,11 +12,11 @@ from app.models import VideoInfo, VideoQuality, VideoFormat, TaskStatus, TaskInf
 from app.exceptions import (
     VideoNotFoundError, DownloadError, UnsupportedURLError, ValidationError
 )
-from app.services.storage_service import storage_service
-from app.services.redis_service import redis_service
-from app.services.auth_service import auth_service
-from app.services.concurrent_download_manager import concurrent_download_manager
-from app.services.bilibili_concurrent_manager import bilibili_concurrent_manager
+from app.services.infrastructure.storage_service import storage_service
+from app.services.infrastructure.redis_service import redis_service
+from app.services.core.auth_service import auth_service
+from app.services.download.concurrent_manager import concurrent_download_manager
+from app.services.download.bilibili_manager import bilibili_concurrent_manager
 import logging
 
 logger = logging.getLogger(__name__)

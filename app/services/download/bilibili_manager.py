@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Dict, Optional, Set, Any, List, Tuple
 from dataclasses import dataclass
 from app.config import settings
-from app.services.redis_service import redis_service
-from app.services.auth_service import auth_service
-from app.services.concurrent_download_manager import concurrent_download_manager, DownloadJob
+from app.services.infrastructure.redis_service import redis_service
+from app.services.core.auth_service import auth_service
+from app.services.download.concurrent_manager import concurrent_download_manager, DownloadJob
 import logging
 
 logger = logging.getLogger(__name__)

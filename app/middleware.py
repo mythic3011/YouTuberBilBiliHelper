@@ -5,7 +5,7 @@ from typing import Callable
 from fastapi import Request, Response, HTTPException
 from fastapi.responses import JSONResponse
 from app.config import settings
-from app.services.redis_service import redis_service
+from app.services.infrastructure.redis_service import redis_service
 from app.exceptions import RateLimitExceededError
 import logging
 
