@@ -1,228 +1,305 @@
-# Examples & Demos
+# 📚 Examples & Demos
 
-This directory contains demonstration scripts and testing examples for the YouTuberBilBiliHelper API.
-
-## 🎯 **Demo Scripts**
-
-### **Authentication System**
-- **`demo_authentication.py`** - Comprehensive authentication system demonstration
-  - Shows authentication status monitoring
-  - Demonstrates setup guide usage
-  - Tests platform-specific configurations
-  - Displays security best practices
-
-### **Core Features**
-- **`demo_final.py`** - Complete API feature demonstration
-  - Multi-platform video extraction
-  - Streaming proxy capabilities
-  - Advanced caching features
-  - Performance monitoring
-
-### **Streaming Capabilities**
-- **`demo_streaming.py`** - Streaming proxy demonstration
-  - Direct video streaming
-  - Quality selection
-  - Platform-specific optimizations
-  - Cache performance
-
-### **User-Friendly API**
-- **`demo_user_friendly.py`** - Simple API endpoints demonstration
-  - Auto-platform detection
-  - Simplified parameters
-  - Easy integration examples
-  - Error handling showcase
-
-## 🧪 **Testing Scripts**
-
-### **Platform Testing**
-- **`test_platforms.py`** - Platform compatibility testing
-  - Tests all supported platforms
-  - Validates URL extraction
-  - Checks authentication integration
-  - Performance benchmarking
-
-### **API Testing**
-- **`test_simple_api.py`** - Simple API endpoint testing
-  - Endpoint functionality verification
-  - Parameter validation testing
-  - Error case handling
-  - Response format validation
-
-### **Streaming Testing**
-- **`test_streaming.py`** - Streaming functionality testing
-  - Proxy performance testing
-  - Cache effectiveness testing
-  - Quality selection validation
-  - Platform-specific testing
-
-## 🚀 **Usage Instructions**
-
-### **Prerequisites**
-```bash
-# Ensure the API server is running
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-# Install demo dependencies (if needed)
-pip install aiohttp requests
-```
-
-### **Running Demos**
-```bash
-# Authentication system demo
-python examples/demo_authentication.py
-
-# Complete feature demonstration
-python examples/demo_final.py
-
-# Streaming capabilities demo
-python examples/demo_streaming.py
-
-# Simple API demo
-python examples/demo_user_friendly.py
-```
-
-### **Running Tests**
-```bash
-# Platform compatibility test
-python examples/test_platforms.py
-
-# API endpoint testing
-python examples/test_simple_api.py
-
-# Streaming functionality test
-python examples/test_streaming.py
-```
-
-## 📊 **Demo Features**
-
-### **Authentication Demo**
-- ✅ Real-time authentication status
-- ✅ Platform-specific setup guides
-- ✅ Cookie template generation
-- ✅ Security best practices
-- ✅ Expected performance improvements
-
-### **Feature Demos**
-- ✅ Multi-platform video extraction
-- ✅ Quality selection and optimization
-- ✅ Caching performance demonstration
-- ✅ Error handling and recovery
-- ✅ Real-time monitoring and stats
-
-### **Testing Capabilities**
-- ✅ Comprehensive platform coverage
-- ✅ Edge case validation
-- ✅ Performance benchmarking
-- ✅ Authentication effectiveness
-- ✅ Error scenario testing
-
-## 🎯 **Integration Examples**
-
-### **Python Integration**
-```python
-import asyncio
-import aiohttp
-
-async def get_video_info(url):
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"http://localhost:8000/api/info?url={url}") as response:
-            return await response.json()
-
-# Usage
-info = asyncio.run(get_video_info("https://youtu.be/dQw4w9WgXcQ"))
-```
-
-### **JavaScript Integration**
-```javascript
-// Fetch video information
-const response = await fetch(`http://localhost:8000/api/info?url=${videoUrl}`);
-const data = await response.json();
-
-// Stream video directly
-const streamUrl = `http://localhost:8000/api/stream?url=${videoUrl}&format=redirect`;
-videoElement.src = streamUrl;
-```
-
-### **cURL Examples**
-```bash
-# Get video info
-curl "http://localhost:8000/api/info?url=https://youtu.be/dQw4w9WgXcQ"
-
-# Stream video
-curl "http://localhost:8000/api/stream?url=https://youtu.be/dQw4w9WgXcQ&format=json"
-
-# Check authentication
-curl "http://localhost:8000/api/v2/auth/status"
-```
-
-## 📈 **Expected Results**
-
-### **Without Authentication**
-- YouTube: ✅ 95% success rate
-- BiliBili: ⚠️ 60% success rate
-- Instagram: ❌ 20% success rate
-- Twitter: ❌ 30% success rate
-- Twitch: ✅ 90% success rate
-
-### **With Authentication**
-- YouTube: ✅ 95% success rate (maintained)
-- BiliBili: ✅ 85% success rate (+42%)
-- Instagram: ✅ 80% success rate (+300%)
-- Twitter: ✅ 70% success rate (+133%)
-- Twitch: ✅ 90% success rate (maintained)
-
-## 🛠️ **Customization**
-
-### **Modifying Demos**
-1. Edit demo scripts to test specific URLs
-2. Adjust quality settings and formats
-3. Test different authentication scenarios
-4. Modify caching parameters
-5. Add custom error handling
-
-### **Creating New Demos**
-1. Copy an existing demo as template
-2. Focus on specific functionality
-3. Add comprehensive error handling
-4. Include performance measurements
-5. Document expected behavior
-
-## 🔍 **Troubleshooting**
-
-### **Common Issues**
-- **Server Not Running**: Ensure API server is active on port 8000
-- **Network Errors**: Check internet connectivity and firewall settings
-- **Authentication Failures**: Verify cookie files are properly configured
-- **Platform Blocks**: Some platforms may block automated requests
-
-### **Debug Mode**
-```bash
-# Run demos with debug output
-python examples/demo_authentication.py --debug
-
-# Enable verbose logging
-export LOG_LEVEL=DEBUG
-python examples/test_platforms.py
-```
-
-## 📚 **Learning Path**
-
-### **Beginner**
-1. Start with `demo_user_friendly.py` - Simple API usage
-2. Try `test_simple_api.py` - Basic testing concepts
-3. Explore `demo_streaming.py` - Streaming capabilities
-
-### **Intermediate**
-1. Run `demo_authentication.py` - Authentication setup
-2. Test `test_platforms.py` - Platform-specific features
-3. Analyze `demo_final.py` - Advanced features
-
-### **Advanced**
-1. Study authentication integration code
-2. Implement custom platform support
-3. Create performance optimization demos
-4. Build integration test suites
+This directory contains practical examples demonstrating how to use the YouTuberBilBiliHelper API.
 
 ---
 
-**These examples demonstrate the full capabilities of YouTuberBilBiliHelper and provide practical integration guidance for developers.**
+## 🎯 Available Examples
+
+### 1. Authentication Demo
+**File:** `authentication_demo.py`
+
+Demonstrates how to:
+- Set up authentication with various platforms
+- Manage cookies and sessions
+- Handle authentication errors
+- Verify authentication status
+
+```bash
+python examples/authentication_demo.py
+```
+
+---
+
+### 2. Streaming Demo
+**File:** `streaming_demo.py`
+
+Demonstrates how to:
+- Get direct stream URLs
+- Use proxy streaming
+- Handle different quality options
+- Optimize for different players (VRChat, Unity)
+
+```bash
+python examples/streaming_demo.py
+```
+
+---
+
+### 3. Benchmark Demo
+**File:** `benchmark_demo.py`
+
+Demonstrates how to:
+- Run performance benchmarks
+- Compare API endpoint speeds
+- Measure response times
+- Analyze throughput
+
+```bash
+python examples/benchmark_demo.py
+```
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+1. **API Running**: Make sure the API is running
+   ```bash
+   make dev
+   ```
+
+2. **Dependencies**: Ensure you have required packages
+   ```bash
+   pip install -r requirements-dev.txt
+   ```
+
+### Running Examples
+
+Each example can be run independently:
+
+```bash
+# Run authentication demo
+python examples/authentication_demo.py
+
+# Run streaming demo
+python examples/streaming_demo.py
+
+# Run benchmark demo
+python examples/benchmark_demo.py
+```
+
+---
+
+## 📖 Example Usage
+
+### Basic Video Information
+
+```python
+import httpx
+
+# Get video information
+response = httpx.get(
+    "http://localhost:8000/api/v2/videos/youtube/dQw4w9WgXcQ"
+)
+video_info = response.json()
+print(f"Title: {video_info['title']}")
+```
+
+### Streaming Video
+
+```python
+import httpx
+
+# Get stream URL
+response = httpx.get(
+    "http://localhost:8000/api/v2/stream/direct/youtube/dQw4w9WgXcQ",
+    params={"quality": "720p"},
+    follow_redirects=True
+)
+# Stream is returned or redirected
+```
+
+### Batch Operations
+
+```python
+import httpx
+
+# Process multiple videos
+response = httpx.post(
+    "http://localhost:8000/api/v2/videos/batch",
+    json={
+        "videos": [
+            {"url": "https://youtube.com/watch?v=VIDEO1", "quality": "best"},
+            {"url": "https://youtube.com/watch?v=VIDEO2", "quality": "720p"}
+        ],
+        "parallel": True,
+        "max_concurrent": 3
+    }
+)
+batch_result = response.json()
+```
+
+---
+
+## 🧪 Testing
+
+**Note:** Test files have been moved to the `tests/` directory for better organization.
+
+- **Unit Tests**: `tests/unit/`
+- **Integration Tests**: `tests/integration/`
+- **E2E Tests**: `tests/e2e/`
+
+To run all tests:
+```bash
+make test-all
+```
+
+---
+
+## 💡 Best Practices
+
+### 1. Error Handling
+
+Always handle potential errors:
+
+```python
+try:
+    response = httpx.get("http://localhost:8000/api/v2/videos/...")
+    response.raise_for_status()
+    data = response.json()
+except httpx.HTTPError as e:
+    print(f"HTTP error occurred: {e}")
+except Exception as e:
+    print(f"An error occurred: {e}")
+```
+
+### 2. Timeout Configuration
+
+Set appropriate timeouts:
+
+```python
+response = httpx.get(
+    "http://localhost:8000/api/v2/stream/...",
+    timeout=30.0  # 30 second timeout
+)
+```
+
+### 3. Async Operations
+
+For better performance, use async:
+
+```python
+import httpx
+import asyncio
+
+async def fetch_video_info(video_id):
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"http://localhost:8000/api/v2/videos/youtube/{video_id}"
+        )
+        return response.json()
+
+# Run async
+asyncio.run(fetch_video_info("dQw4w9WgXcQ"))
+```
+
+---
+
+## 🔗 Related Documentation
+
+- **[API Documentation](http://localhost:8000/docs)** - Interactive API docs (when running)
+- **[Getting Started Guide](../docs/getting-started/GETTING_STARTED.md)** - Detailed development guide
+- **[Contributing Guide](../docs/development/CONTRIBUTING.md)** - How to contribute
+
+---
+
+## 📝 Creating New Examples
+
+Want to add a new example? Follow these guidelines:
+
+1. **Naming**: Use `*_demo.py` for demonstration scripts
+2. **Documentation**: Add clear comments and docstrings
+3. **Error Handling**: Include proper error handling
+4. **Self-Contained**: Make examples work independently
+5. **Update README**: Add your example to this README
+
+### Example Template
+
+```python
+"""
+Example: [What this demonstrates]
+
+This example shows how to:
+- Point 1
+- Point 2
+- Point 3
+"""
+
+import httpx
+
+
+def main():
+    """Main demonstration function."""
+    # Setup
+    api_base = "http://localhost:8000"
+    
+    try:
+        # Your example code here
+        response = httpx.get(f"{api_base}/api/v2/...")
+        response.raise_for_status()
+        
+        # Process results
+        data = response.json()
+        print(f"Success: {data}")
+        
+    except Exception as e:
+        print(f"Error: {e}")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+## 🆘 Troubleshooting
+
+### API Not Responding
+
+```bash
+# Check if API is running
+make health
+
+# Restart API
+make stop
+make dev
+```
+
+### Import Errors
+
+```bash
+# Install dependencies
+pip install -r requirements-dev.txt
+
+# Or use uv
+uv pip install -r requirements-dev.txt
+```
+
+### Connection Refused
+
+Make sure the API is running on the correct port:
+```bash
+# Check running services
+make status
+
+# View logs
+make logs
+```
+
+---
+
+## 📊 Performance Tips
+
+1. **Use Async**: For multiple requests, use async operations
+2. **Connection Pooling**: Reuse HTTP clients
+3. **Caching**: Enable caching for repeated requests
+4. **Batch Operations**: Use batch endpoints when available
+
+---
+
+**Last Updated:** October 29, 2025  
+**Examples Version:** 2.0  
+
+**Happy Coding! 🚀**
