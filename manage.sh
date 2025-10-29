@@ -114,68 +114,117 @@ cmd_start() {
 cmd_dev() {
     print_header "Starting Development Environment"
 
-    # Check if uv is installed
-    if check_command uv; then
-        print_info "Using uv package manager..."
+    local api="${1:-python}"
 
-        # Create/sync environment with uv
-        if [ ! -d ".venv" ]; then
-            print_info "Creating virtual environment with uv..."
-            uv venv
-            print_success "Virtual environment created"
-        fi
+    case "$api" in
+        python|py)
+            # Python development setup
+            # Check if uv is installed
+            if check_command uv; then
+                print_info "Using uv package manager..."
 
-        # Install dependencies with uv
-        print_info "Installing dependencies with uv..."
-        uv pip install -e .
-        uv pip install -r requirements-dev.txt
-        print_success "Dependencies installed"
+                # Create/sync environment with uv
+                if [ ! -d ".venv" ]; then
+                    print_info "Creating virtual environment with uv..."
+                    uv venv
+                    print_success "Virtual environment created"
+                fi
 
-        # Activate virtual environment
-        source .venv/bin/activate
+                # Install dependencies with uv
+                print_info "Installing dependencies with uv..."
+                uv pip install -e .
+                uv pip install -r requirements-dev.txt
+                print_success "Dependencies installed"
 
-    elif check_command python3; then
-        print_info "Using pip (uv not found)..."
+                # Activate virtual environment
+                source .venv/bin/activate
 
-        # Check if virtual environment exists
-        if [ ! -d ".venv" ]; then
-            print_info "Creating virtual environment..."
-            python3 -m venv .venv
-            print_success "Virtual environment created"
-        fi
+            elif check_command python3; then
+                print_info "Using pip (uv not found)..."
 
-        # Activate virtual environment
-        print_info "Activating virtual environment..."
-        source .venv/bin/activate
+                # Check if virtual environment exists
+                if [ ! -d ".venv" ]; then
+                    print_info "Creating virtual environment..."
+                    python3 -m venv .venv
+                    print_success "Virtual environment created"
+                fi
 
-        # Install dependencies
-        print_info "Installing dependencies..."
-        pip install -q --upgrade pip
-        pip install -q -e .
-        pip install -q -r requirements-dev.txt
-        print_success "Dependencies installed"
+                # Activate virtual environment
+                print_info "Activating virtual environment..."
+                source .venv/bin/activate
 
-    else
-        print_error "Neither uv nor Python 3 is installed"
-        print_info "Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh"
-        print_info "Or install Python 3: https://www.python.org/downloads/"
-        exit 1
-    fi
+                # Install dependencies
+                print_info "Installing dependencies..."
+                pip install -q --upgrade pip
+                pip install -q -e .
+                pip install -q -r requirements-dev.txt
+                print_success "Dependencies installed"
 
-    # Start services
-    print_info "Starting DragonflyDB (Redis-compatible cache)..."
-    docker-compose up -d dragonfly
+            else
+                print_error "Neither uv nor Python 3 is installed"
+                print_info "Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh"
+                print_info "Or install Python 3: https://www.python.org/downloads/"
+                exit 1
+            fi
 
-    # Run the application
-    print_info "Starting Python API in development mode..."
-    print_success "Development environment ready!"
-    print_info ""
-    print_info "Running on http://localhost:$PYTHON_API_PORT"
-    print_info "API Docs: http://localhost:$PYTHON_API_PORT/docs"
-    print_info ""
-    print_info "Press Ctrl+C to stop"
+            # Start services
+            print_info "Starting DragonflyDB (Redis-compatible cache)..."
+            docker-compose up -d dragonfly
 
-    uvicorn app.main:app --reload --host 0.0.0.0 --port $PYTHON_API_PORT
+            # Run the application
+            print_info "Starting Python API in development mode..."
+            print_success "Development environment ready!"
+            print_info ""
+            print_info "Running on http://localhost:$PYTHON_API_PORT"
+            print_info "API Docs: http://localhost:$PYTHON_API_PORT/docs"
+            print_info ""
+            print_info "Press Ctrl+C to stop"
+
+            uvicorn app.main:app --reload --host 0.0.0.0 --port $PYTHON_API_PORT
+            ;;
+        go)
+            # Go development setup
+            if ! check_command go; then
+                print_error "Go is not installed"
+                print_info "Install Go: https://go.dev/doc/install"
+                exit 1
+            fi
+
+            print_info "Starting DragonflyDB (Redis-compatible cache)..."
+            docker-compose up -d dragonfly
+            sleep 2
+
+            # Navigate to Go API directory
+            cd go-api || {
+                print_error "go-api directory not found!"
+                exit 1
+            }
+
+            print_info "Starting Go API in development mode..."
+            print_success "Development environment ready!"
+            print_info ""
+            print_info "Running on http://localhost:$GO_API_PORT"
+            print_info "Health: http://localhost:$GO_API_PORT/health"
+            print_info ""
+            print_info "Press Ctrl+C to stop"
+            print_info ""
+
+            # Run with auto-reload if 'air' is installed, otherwise use go run
+            if check_command air; then
+                print_info "Using 'air' for hot reload..."
+                air
+            else
+                print_warning "'air' not installed - no hot reload (install: go install github.com/air-verse/air@latest)"
+                print_info "Running with 'go run'..."
+                go run main.go
+            fi
+            ;;
+        *)
+            print_error "Invalid API choice: $api"
+            print_info "Usage: $0 dev [python|go]"
+            exit 1
+            ;;
+    esac
 }
 
 cmd_build() {
@@ -518,7 +567,7 @@ REQUIREMENTS:
 COMMANDS:
 
   Development:
-    dev               Start development environment with hot reload
+    dev [api]         Start development environment with hot reload (python|go) [default: python]
     start [api]       Start services (python|go|both) [default: python]
     stop              Stop all services
     restart [api]     Restart services
@@ -547,7 +596,8 @@ COMMANDS:
 EXAMPLES:
 
   # Start development
-  ./manage.sh dev
+  ./manage.sh dev              # Python with hot reload (default)
+  ./manage.sh dev go           # Go with hot reload
 
   # Start production (Go API recommended)
   ./manage.sh start go
