@@ -1,0 +1,47 @@
+# Docker Compose for Testing
+# Usage: docker-compose -f docker-compose.test.yml up
+version: "3.8"
+
+services:
+  # Test database
+  test-dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    container_name: video-api-test-cache
+    ports:
+      - "6380:6379" # Different port for testing
+    command: ["dragonfly", "--logtostderr", "--maxmemory=128mb", "--cache_mode"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - test-network
+
+  # Python API for testing
+  test-python-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: video-api-test-python
+    ports:
+      - "8888:8000" # Different port for testing
+    environment:
+      - REDIS_URL=redis://test-dragonfly:6379
+      - ENVIRONMENT=test
+      - LOG_LEVEL=DEBUG
+      - PORT=8000
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./tests:/app/tests:ro
+      - ./app:/app/app:ro
+    depends_on:
+      test-dragonfly:
+        condition: service_healthy
+    command: ["pytest", "tests/", "-v", "--cov=app"]
+    networks:
+      - test-network
+
+networks:
+  test-network:
+    driver: bridge

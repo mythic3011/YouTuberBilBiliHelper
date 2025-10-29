@@ -16,6 +16,7 @@ parts/
 sdist/
 var/
 wheels/
+pip-wheel-metadata/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
@@ -43,9 +44,54 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
-cover/
 
-# Virtual environments
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
 .env
 .venv
 env/
@@ -54,14 +100,52 @@ ENV/
 env.bak/
 venv.bak/
 
-# IDEs
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go build artifacts
+go-video-api
+main
+
+# Go module cache
+go.sum.bak
+
+# IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS
+# OS generated files
 .DS_Store
 .DS_Store?
 ._*
@@ -70,55 +154,90 @@ venv.bak/
 ehthumbs.db
 Thumbs.db
 
-# Project specific
-logs/*.log
-app.log
+# Docker
+.docker/
+
+# Logs
+logs/
 *.log
 
-# Sensitive data
+# Downloads (keep structure but ignore content)
+downloads/youtube/*
+downloads/bilibili/*
+downloads/instagram/*
+downloads/twitter/*
+downloads/twitch/*
+downloads/temp/*
+!downloads/*/.gitkeep
+
+# Config secrets
 config/cookies/*.txt
 !config/cookies/*_template.txt
-config/auth.json
-.env.local
-.env.production
 
-# Downloads and temporary files
-downloads/*
-!downloads/.gitkeep
+# Benchmark results
+benchmarks/*.json
+simple_benchmark_results_*.json
+performance_comparison_*.json
+
+# Temporary files
+tmp/
+temp/
 *.tmp
 *.temp
-
-# Cache
-.cache/
-*.cache
+*.bak
+*.backup
+*.old
 
 # Database
 *.db
 *.sqlite
 *.sqlite3
 
-# Redis dump
+# Redis dumps
 dump.rdb
-*.dfs
+*.rdb
 
-# Docker
-.dockerignore
-
-# Development
-.pytest_cache/
-.mypy_cache/
+# Coverage reports
+coverage/
+*.cover
 .coverage
 htmlcov/
+.coverage.*
 
-# UV specific (keep these for reproducible builds)
-# .python-version  # Keep this for UV
-# uv.lock          # Keep this for reproducible builds
+# Node.js (if any)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Backup files
-*.bak
-*.backup
+# Rust (if any)
+target/
+Cargo.lock
+
+# Local development
+.local/
+local.py
+local.env
+
+# Development tools
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.tox/
+
+# IDEs
+*.swp
+*.swo
 *~
+.vscode/
+.idea/
 
-# Documentation drafts
-docs/drafts/
-*.draft.md
+# Pre-commit
+.pre-commit-config.yaml.bak
+
+# Test artifacts
+.pytest_cache/
+*.pytest_cache
+
+# UV
+.python-version

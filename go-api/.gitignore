@@ -1,0 +1,46 @@
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+go-video-api
+main
+
+# Go test files
+*.test
+*.out
+
+# Go coverage files
+*.cover
+*.coverprofile
+
+# Go module cache
+go.sum.bak
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker files
+Dockerfile.*
+docker-compose.*
+*.yml
+*.yaml
+
+# Logs
+logs/
+*.log
+
+# Downloads
+downloads/
+
+# Config
+config/
+
+# Temporary files
+tmp/
+temp/
+
