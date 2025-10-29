@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Request, Query, Response
 from fastapi.responses import StreamingResponse, RedirectResponse, JSONResponse
 from app.models import ErrorResponse
-from app.services.streaming_service import streaming_service
+from app.services.streaming import streaming_service
 from app.exceptions import VideoNotFoundError, ServiceUnavailableError
 from app.config import settings
 import logging

@@ -16,14 +16,11 @@ from app.services.infrastructure.storage_service import storage_service
 from app.utils.exception_handlers import register_exception_handlers
 
 # Import all routers from organized structure
-from app.routes.core import system_router, auth_router
+from app.routes.core import system_router, auth_router, meta_router
 from app.routes.videos import info_router, batch_router, concurrent_router as video_concurrent_router, files_router
 from app.routes.streaming import proxy_router, direct_router
 from app.routes.media import management_router, processing_router
 from app.routes.legacy import simple_router, vrchat_router
-
-# Import remaining routers that need migration
-from app.routes import meta, videos_v3, streaming_v3, concurrent
 
 # Configure logging
 logging.basicConfig(
@@ -43,19 +40,19 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     # Startup
     logger.info("Starting YouTuberBilBiliHelper API...")
-    
+
     # Test Redis connection
     try:
         await redis_service.get_pool()
         logger.info("Redis connection established")
     except Exception as e:
         logger.error(f"Failed to connect to Redis: {e}")
-    
+
     # Start background tasks
     cleanup_task = asyncio.create_task(periodic_cleanup())
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down YouTuberBilBiliHelper API...")
     cleanup_task.cancel()
@@ -104,33 +101,28 @@ app.middleware("http")(logging_middleware)
 # Register all routers in organized manner
 def register_routers(app: FastAPI):
     """Register all API routers with the FastAPI application."""
-    # Core system routers (health, system info, authentication)
+    # Core system routers (health, system info, authentication, API metadata)
     app.include_router(system_router)
     app.include_router(auth_router)
-    
+    app.include_router(meta_router)
+
     # Video operation routers
     app.include_router(info_router)
     app.include_router(files_router)
     app.include_router(batch_router)
     app.include_router(video_concurrent_router)
-    
+
     # Streaming routers
     app.include_router(direct_router)
     app.include_router(proxy_router)
-    
+
     # Media management routers
     app.include_router(management_router)
     app.include_router(processing_router)
-    
+
     # Legacy routers (backward compatibility - registered last)
     app.include_router(simple_router)
     app.include_router(vrchat_router)
-    
-    # V3 routers (to be migrated to new structure)
-    app.include_router(meta.router)
-    app.include_router(videos_v3.router)
-    app.include_router(streaming_v3.router)
-    app.include_router(concurrent.router)
 
 
 # Register all routers
@@ -185,15 +177,15 @@ async def legacy_raw_link(yt: str):
 def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
-    
+
     openapi_schema = get_openapi(
         title=settings.api_title,
         version=settings.api_version,
         description=f"""
         {settings.api_description}
-        
+
         ## Features
-        
+
         - **Video Downloads**: Download videos from YouTube and BiliBili
         - **Streaming**: Get direct stream URLs or proxy streams
         - **Batch Operations**: Download multiple videos at once
@@ -201,26 +193,26 @@ def custom_openapi():
         - **Storage Management**: Automatic cleanup and storage limits
         - **Rate Limiting**: Configurable rate limiting per client
         - **Health Monitoring**: System health and statistics endpoints
-        
+
         ## Supported Platforms
-        
+
         - YouTube (youtube.com, youtu.be)
         - BiliBili (bilibili.com, b23.tv)
-        
+
         ## Rate Limits
-        
+
         - **Default**: {settings.rate_limit_max_requests} requests per {settings.rate_limit_window} seconds
         - **Headers**: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset
-        
+
         ## Storage
-        
+
         - **Automatic Cleanup**: Files older than {settings.temp_file_retention_hours} hours
         - **Storage Limit**: {settings.max_storage_gb} GB maximum
         - **Formats**: MP4, WebM, MKV, MP3, M4A
         """,
         routes=app.routes,
     )
-    
+
     # Add security schemes
     openapi_schema["components"]["securitySchemes"] = {
         "ApiKeyHeader": {
@@ -229,7 +221,7 @@ def custom_openapi():
             "name": "X-API-Key"
         }
     }
-    
+
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 

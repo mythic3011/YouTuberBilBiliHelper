@@ -12,8 +12,8 @@ import logging
 from typing import AsyncGenerator, Optional, Dict, Any, List
 from pathlib import Path
 
-from app.services.streaming_service import StreamingService
-from app.services.redis_service import redis_service
+from app.services.streaming.proxy_service import StreamingService
+from app.services.infrastructure.redis_service import redis_service
 from app.exceptions import ServiceUnavailableError, VideoNotFoundError
 from app.config import settings
 

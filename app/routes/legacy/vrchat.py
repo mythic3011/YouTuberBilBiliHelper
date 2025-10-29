@@ -7,7 +7,7 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from urllib.parse import quote
 
 from app.services.core.video_service import video_service
-from app.services.streaming_service import StreamingService
+from app.services.streaming import StreamingService
 from app.exceptions import UnsupportedURLError, VideoNotFoundError
 from app.models import ErrorResponse
 

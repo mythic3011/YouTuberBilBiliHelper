@@ -11,9 +11,8 @@ from typing import Optional, Dict, Any, List
 import logging
 import asyncio
 
-from app.services.robust_streaming_service import robust_streaming_service
-from app.services.concurrent_download_manager import concurrent_download_manager
-from app.services.bilibili_concurrent_manager import bilibili_concurrent_manager
+from app.services.streaming import robust_streaming_service
+from app.services.download import concurrent_download_manager, bilibili_concurrent_manager
 from app.models import ErrorResponse
 from app.exceptions import ServiceUnavailableError
 
