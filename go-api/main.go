@@ -12,10 +12,28 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
+	_ "video-streaming-api/docs" // Swagger docs
 	"video-streaming-api/internal/api"
 	"video-streaming-api/internal/config"
 	"video-streaming-api/internal/services"
 )
+
+// @title           Video Streaming API
+// @version         1.0
+// @description     High-performance video streaming and processing API built with Go
+// @termsOfService  http://swagger.io/terms/
+
+// @contact.name   API Support
+// @contact.url    http://www.swagger.io/support
+// @contact.email  support@swagger.io
+
+// @license.name  MIT
+// @license.url   https://opensource.org/licenses/MIT
+
+// @host      localhost:8001
+// @BasePath  /
+
+// @schemes http https
 
 func main() {
 	// Load configuration

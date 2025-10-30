@@ -1,0 +1,187 @@
+basePath: /
+definitions:
+  models.ErrorResponse:
+    properties:
+      code:
+        type: string
+      detail:
+        type: string
+      error:
+        type: string
+      success:
+        type: boolean
+      timestamp:
+        type: string
+    type: object
+  models.Format:
+    properties:
+      bitrate:
+        type: integer
+      codec:
+        type: string
+      ext:
+        type: string
+      filesize:
+        type: integer
+      format_id:
+        type: string
+      quality:
+        type: string
+      resolution:
+        type: string
+      url:
+        type: string
+    type: object
+  models.HealthResponse:
+    properties:
+      memory:
+        $ref: '#/definitions/models.MemoryStats'
+      services:
+        additionalProperties:
+          type: string
+        type: object
+      status:
+        type: string
+      timestamp:
+        type: string
+      uptime:
+        type: string
+      version:
+        type: string
+    type: object
+  models.MemoryStats:
+    properties:
+      alloc_mb:
+        type: integer
+      num_gc:
+        type: integer
+      sys_mb:
+        type: integer
+      total_alloc_mb:
+        type: integer
+    type: object
+  models.VideoInfo:
+    properties:
+      description:
+        type: string
+      duration:
+        type: integer
+      formats:
+        items:
+          $ref: '#/definitions/models.Format'
+        type: array
+      id:
+        type: string
+      like_count:
+        type: integer
+      platform:
+        type: string
+      thumbnail:
+        type: string
+      title:
+        type: string
+      upload_date:
+        type: string
+      uploader:
+        type: string
+      view_count:
+        type: integer
+    type: object
+host: localhost:8001
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: High-performance video streaming and processing API built with Go
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  termsOfService: http://swagger.io/terms/
+  title: Video Streaming API
+  version: "1.0"
+paths:
+  /:
+    get:
+      description: Get API information and available endpoints
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Root endpoint
+      tags:
+      - root
+  /api/v2/system/health:
+    get:
+      description: Check API and service health status
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.HealthResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/models.HealthResponse'
+      summary: Health check
+      tags:
+      - system
+  /api/v2/videos/{platform}/{video_id}:
+    get:
+      description: Retrieve video metadata from various platforms
+      parameters:
+      - description: Platform (youtube, bilibili, twitter, instagram, twitch)
+        in: path
+        name: platform
+        required: true
+        type: string
+      - description: Video ID
+        in: path
+        name: video_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.VideoInfo'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Get video information
+      tags:
+      - videos
+  /health:
+    get:
+      description: Check API and service health status
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.HealthResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/models.HealthResponse'
+      summary: Health check
+      tags:
+      - system
+schemes:
+- http
+- https
+swagger: "2.0"

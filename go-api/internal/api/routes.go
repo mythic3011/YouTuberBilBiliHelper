@@ -3,6 +3,8 @@ package api
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 // SetupRoutes configures all API routes
@@ -16,6 +18,10 @@ func SetupRoutes(router *gin.Engine, handler *Handler, logger *logrus.Logger) {
 	// Root endpoint
 	router.GET("/", handler.Root)
 	router.GET("/health", handler.GetHealth)
+
+	// Swagger documentation
+	router.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// API v2 routes (matching Python API)
 	v2 := router.Group("/api/v2")

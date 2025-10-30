@@ -33,7 +33,13 @@ func NewHandler(
 	}
 }
 
-// Root handles the root endpoint
+// Root godoc
+// @Summary      Root endpoint
+// @Description  Get API information and available endpoints
+// @Tags         root
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Router       / [get]
 func (h *Handler) Root(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"name":        "Go Video Streaming API",
@@ -52,7 +58,15 @@ func (h *Handler) Root(c *gin.Context) {
 	})
 }
 
-// GetHealth handles health check requests
+// GetHealth godoc
+// @Summary      Health check
+// @Description  Check API and service health status
+// @Tags         system
+// @Produce      json
+// @Success      200  {object}  models.HealthResponse
+// @Failure      503  {object}  models.HealthResponse
+// @Router       /health [get]
+// @Router       /api/v2/system/health [get]
 func (h *Handler) GetHealth(c *gin.Context) {
 	health, err := h.system.GetHealth(c.Request.Context())
 	if err != nil {
@@ -68,7 +82,17 @@ func (h *Handler) GetHealth(c *gin.Context) {
 	c.JSON(statusCode, health)
 }
 
-// GetVideoInfo handles video information requests
+// GetVideoInfo godoc
+// @Summary      Get video information
+// @Description  Retrieve video metadata from various platforms
+// @Tags         videos
+// @Produce      json
+// @Param        platform  path      string  true  "Platform (youtube, bilibili, twitter, instagram, twitch)"
+// @Param        video_id  path      string  true  "Video ID"
+// @Success      200       {object}  models.VideoInfo
+// @Failure      400       {object}  models.ErrorResponse
+// @Failure      404       {object}  models.ErrorResponse
+// @Router       /api/v2/videos/{platform}/{video_id} [get]
 func (h *Handler) GetVideoInfo(c *gin.Context) {
 	platform := c.Param("platform")
 	videoID := c.Param("video_id")
