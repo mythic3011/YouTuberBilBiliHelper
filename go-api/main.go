@@ -31,7 +31,7 @@ import (
 // @license.url   https://opensource.org/licenses/MIT
 
 // @host      localhost:8001
-// @BasePath  /
+// @BasePath
 
 // @schemes http https
 
@@ -78,7 +78,7 @@ func main() {
 
 	// Graceful shutdown
 	srv := setupServer(addr, router)
-	
+
 	// Start server in goroutine
 	go func() {
 		if err := srv.ListenAndServe(); err != nil {
@@ -143,4 +143,3 @@ func setupServer(addr string, handler *gin.Engine) *http.Server {
 		MaxHeaderBytes: 1 << 20, // 1 MB
 	}
 }
-

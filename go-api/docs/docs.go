@@ -287,7 +287,7 @@ const docTemplate = `{
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
 	Host:             "localhost:8001",
-	BasePath:         "/",
+	BasePath:         "",
 	Schemes:          []string{"http", "https"},
 	Title:            "Video Streaming API",
 	Description:      "High-performance video streaming and processing API built with Go",
