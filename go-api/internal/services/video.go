@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"time"
 
-	"github.com/sirupsen/logrus"
 	"video-streaming-api/internal/config"
 	"video-streaming-api/internal/models"
+
+	"github.com/sirupsen/logrus"
 )
 
 // VideoService handles video operations
@@ -264,4 +264,3 @@ func (s *VideoService) ValidatePlatform(platform string) bool {
 	}
 	return false
 }
-
