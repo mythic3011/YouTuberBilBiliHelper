@@ -24,6 +24,7 @@ logs/
 # Documentation (exclude markdown but keep generated swagger docs)
 *.md
 !README.md
+!docs/
 
 # Docker
 Dockerfile
