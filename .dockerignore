@@ -20,12 +20,10 @@ main
 # Downloads and temp files
 downloads/
 logs/
-config/cookies/*.txt
 
-# Documentation
+# Documentation (exclude markdown but keep generated swagger docs)
 *.md
 !README.md
-docs/
 
 # Docker
 Dockerfile
