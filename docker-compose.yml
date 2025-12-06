@@ -1,9 +1,12 @@
 services:
-  go-api:
+  video-api:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: video-api-go
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    image: video-streaming-api:latest
+    container_name: video-api
     ports:
       - "8001:8001"
     environment:
@@ -12,21 +15,31 @@ services:
       - LOG_LEVEL=info
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - REDIS_DB=0
       - CACHE_TTL=300
       - VIDEO_INFO_TTL=3600
       - STREAM_URL_TTL=600
       - RATE_LIMIT_ENABLED=true
       - RATE_LIMIT_MAX_REQUESTS=1000
       - RATE_LIMIT_WINDOW=60
+      - TZ=UTC
     volumes:
       - ./downloads:/app/downloads
       - ./logs:/app/logs
       - ./config:/app/config
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - video-api-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/v2/system/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   redis:
     image: redis:7-alpine
@@ -35,10 +48,21 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
     restart: unless-stopped
     networks:
       - video-api-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
 
 volumes:
   redis_data:
@@ -46,4 +70,3 @@ volumes:
 networks:
   video-api-network:
     driver: bridge
-

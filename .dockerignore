@@ -1,0 +1,51 @@
+# Git
+.git
+.gitignore
+.github
+
+# IDE
+.idea
+.vscode
+.kiro
+*.swp
+*.swo
+*~
+
+# Build artifacts
+tmp/
+*.log
+video-api
+main
+
+# Downloads and temp files
+downloads/
+logs/
+config/cookies/*.txt
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Development
+.air.toml
+.env
+.env.*
+!.env.example
+
+# Testing
+*_test.go
+coverage.out
+coverage.html
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependencies (will be downloaded during build)
+vendor/

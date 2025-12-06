@@ -1,61 +1,74 @@
-# Multi-stage build for optimal size
+# Multi-stage build for optimal size and security
 
 # Build stage
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /build
 
 # Install build dependencies
-RUN apk add --no-cache git
+RUN apk add --no-cache git ca-certificates tzdata
 
-# Copy go mod files
+# Copy go mod files first for better layer caching
 COPY go.mod go.sum ./
-RUN go mod download
+RUN go mod download && go mod verify
 
 # Copy source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-w -s" -o main .
+# Build the application with optimizations
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -a -installsuffix cgo \
+    -ldflags="-w -s -X main.Version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')" \
+    -o video-api \
+    .
 
-# Final stage
-FROM alpine:latest
+# Final stage - minimal runtime image
+FROM alpine:3.19
 
-# Install runtime dependencies
+# Install runtime dependencies in a single layer
 RUN apk --no-cache add \
     ca-certificates \
     python3 \
     py3-pip \
     ffmpeg \
     curl \
-    tzdata
+    tzdata \
+    && pip3 install --no-cache-dir --break-system-packages yt-dlp \
+    && rm -rf /var/cache/apk/* /tmp/* /root/.cache
 
-# Install yt-dlp (Alpine Linux requires --break-system-packages)
-RUN pip3 install --no-cache-dir --break-system-packages yt-dlp
+# Copy timezone data from builder
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 
-# Create app user
+# Create app user with specific UID/GID for consistency
 RUN addgroup -g 1000 appuser && \
     adduser -D -u 1000 -G appuser appuser
 
 WORKDIR /app
 
-# Copy binary from builder
-COPY --from=builder /build/main .
+# Copy binary from builder with correct name
+COPY --from=builder /build/video-api .
 
-# Create necessary directories
-RUN mkdir -p downloads/youtube downloads/bilibili downloads/temp logs config/cookies && \
-    chown -R appuser:appuser /app
+# Create necessary directories with proper permissions
+RUN mkdir -p \
+    downloads/youtube \
+    downloads/bilibili \
+    downloads/twitter \
+    downloads/instagram \
+    downloads/twitch \
+    downloads/temp \
+    logs \
+    config/cookies \
+    && chown -R appuser:appuser /app
 
-# Switch to non-root user
+# Switch to non-root user for security
 USER appuser
 
-# Expose port
+# Expose application port
 EXPOSE 8001
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8001/health || exit 1
+# Health check with proper endpoint
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8001/api/v2/system/health || exit 1
 
 # Run the application
-CMD ["./main"]
-
+CMD ["./video-api"]
