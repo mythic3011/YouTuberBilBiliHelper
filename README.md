@@ -1,456 +1,350 @@
-# 🚀 Video Streaming API Platform
+# 🚀 Video Streaming API (Go)
 
-[![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://python.org)
-[![Go](https://img.shields.io/badge/Go-1.21+-00ADD8.svg)](https://golang.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com)
-[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://docker.com)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+High-performance video streaming API built with Go, delivering exceptional performance for video content management across multiple platforms.
 
-Enterprise-grade video content management platform with **dual implementation** supporting multiple mainstream video platforms with intelligent content processing and streaming services.
+## ⚡ Performance Highlights
 
-高性能企業級影片內容管理平台，支援多個主流影片平台的智慧內容處理與串流服務。
-
-**🔥 Performance**: Go implementation delivers **3.3x faster performance** than Python FastAPI!
-
----
-
-## 🌍 Multi-Language Documentation
-
-| Language | README | Status |
-|----------|--------|--------|
-| 🇺🇸 English | README.md (this file) | ✅ Available |
-| 🇨🇳 简体中文 | [README.zh-CN.md](README.zh-CN.md) | ✅ Available |
-| 🇭🇰 繁體中文 | [README.zh-HK.md](README.zh-HK.md) | ✅ Available |
-| 🇯🇵 日本語 | [README.ja.md](README.ja.md) | ✅ Available |
-
----
-
-## ⚡ Quick Start
-
-### For New Developers
-
-👉 **[START HERE](docs/getting-started/START_HERE.md)** - Complete setup in under 5 minutes!
-
-### Choose Your Implementation
-
-#### Option 1: Go API (Recommended - 3.3x Faster) 🚀
-
-```bash
-cd go-api
-docker-compose up -d
-
-# Test the API
-curl http://localhost:8001/health
-```
-
-**Your Go API is running at:**
-- 🚀 API: http://localhost:8001
-- 📊 Metrics: http://localhost:8001/api/v2/stream/metrics
-
-#### Option 2: Python API (Feature-Rich) 🐍
-
-```bash
-# Automated setup
-./scripts/setup-dev.sh
-
-# Start development environment
-make dev
-```
-
-**Your Python API is running at:**
-- 🐍 API: http://localhost:8000
-- 📚 Docs: http://localhost:8000/docs
-- 💾 Redis UI: http://localhost:8082
-
-#### Option 3: Both APIs (Comparison)
-
-```bash
-# Start Python API (port 8000)
-make dev
-
-# In another terminal, start Go API (port 8001)
-cd go-api && docker-compose up -d
-
-# Compare performance
-make benchmark
-```
-
----
-
-## 🏗️ Architecture Overview
-
-### Dual Implementation Architecture
-
-```mermaid
-graph TB
-    A[Client Applications] --> B[Python FastAPI<br/>Port 8000]
-    A --> C[Go API<br/>Port 8001]
-    B --> D[Redis<br/>Cache & Sessions]
-    C --> D
-    B --> E[yt-dlp<br/>Video Processing]
-    C --> E
-    F[Prometheus<br/>Metrics] --> B
-    F --> C
-    G[Grafana<br/>Dashboard] --> F
-```
-
-### Why Two Implementations?
-
-| Feature | Python FastAPI | Go API |
-|---------|---------------|---------|
-| **Performance** | Good (1,200 RPS) | **Excellent (4,000+ RPS)** |
-| **Development Speed** | ⚡ Fast | Moderate |
-| **Resource Usage** | ~100MB | **~30MB** |
-| **Features** | **Full (all features)** | Core features |
-| **Documentation** | **Interactive (Swagger)** | Standard |
-| **Best For** | Development, Feature-rich | **Production, High-load** |
-
-**Recommendation**: Start with **Go API** for production, use Python for development/testing.
-
----
-
-## 📊 Performance Comparison
-
-| Metric | Python FastAPI | Go API | Improvement |
-|--------|---------------|---------|-------------|
-| **Requests/sec** | 1,227 | 4,035 | **🚀 3.3x faster** |
-| **Average Latency** | ~30ms | ~5ms | **⚡ 83% faster** |
-| **Memory Usage** | ~100MB | ~30MB | **💾 70% less** |
-| **Startup Time** | ~5s | ~0.5s | **⏱️ 90% faster** |
-| **Container Size** | ~800MB | ~50MB | **📦 94% smaller** |
+- **Throughput**: 4,000+ requests per second
+- **Latency**: ~5ms average response time
+- **Memory**: ~30MB footprint
+- **Concurrency**: Handles 1000+ simultaneous connections
 
 ---
 
 ## 📁 Project Structure
 
 ```
-YouTuberBilBiliHelper/
-├── app/                       # 🐍 Python FastAPI application
-│   ├── routes/               # API endpoints
-│   │   ├── core/            # System & auth routes
-│   │   ├── videos/          # Video operations
-│   │   ├── streaming/       # Streaming endpoints
-│   │   ├── media/           # Media management
-│   │   └── legacy/          # Backward compatibility
-│   ├── services/            # Business logic
-│   │   ├── core/            # Core services
-│   │   ├── streaming/       # Streaming services
-│   │   ├── download/        # Download managers
-│   │   └── infrastructure/  # Redis, storage
-│   ├── utils/               # Shared utilities
-│   ├── models.py            # Data models
-│   ├── config.py            # Configuration
-│   └── main.py              # Application entry
-├── go-api/                    # 🚀 Go implementation (3.3x faster)
-│   ├── main.go               # Application entry point
-│   ├── internal/             # Internal packages
-│   │   ├── config/          # Configuration management
-│   │   ├── models/          # Data models
-│   │   ├── services/        # Business logic layer
-│   │   └── api/             # HTTP handlers & routes
-│   ├── Dockerfile            # Production Docker image
-│   ├── docker-compose.yml    # Go API orchestration
-│   └── README.md             # Go API documentation
-├── docs/                      # 📚 Documentation
-│   ├── getting-started/      # Quick start guides
-│   ├── development/          # Development guides
-│   ├── architecture/         # Architecture docs
-│   └── deployment/           # Deployment guides
-├── tests/                     # 🧪 Test suite
-│   ├── unit/                 # Unit tests
-│   ├── integration/          # Integration tests
-│   └── e2e/                  # End-to-end tests
-├── examples/                  # 📖 Usage examples
-├── scripts/                   # 🛠️ Utility scripts
-├── docker/                    # 🐳 Docker configurations
-├── Makefile                   # 📋 Convenient commands
-└── pyproject.toml            # Python project config
+.
+├── main.go                    # Application entry point
+├── go.mod                     # Go dependencies
+├── go.sum                     # Dependency checksums
+├── Dockerfile                 # Production Docker image
+├── docker-compose.yml         # Docker orchestration
+├── .air.toml                  # Hot reload configuration
+├── internal/
+│   ├── config/               # Configuration management
+│   ├── models/               # Data models
+│   ├── services/             # Business logic
+│   │   ├── redis.go         # Redis service
+│   │   ├── video.go         # Video service
+│   │   ├── streaming.go     # Streaming service
+│   │   └── system.go        # System service
+│   └── api/                  # HTTP handlers
+│       ├── handlers.go      # Request handlers
+│       ├── routes.go        # Route definitions
+│       └── middleware.go    # HTTP middleware
+├── docs/                      # Swagger documentation
+└── tmp/                       # Build artifacts
 ```
 
 ---
 
-## 🛠️ Available Commands
+## 🚀 Quick Start
 
-### Development
-```bash
-make dev          # Start development environment
-make test-all     # Run all tests with coverage
-make format       # Format code (black, isort)
-make lint         # Lint code (ruff)
-make quality      # Run all quality checks
-```
-
-### Deployment
-```bash
-make python       # Deploy Python API
-make production   # Full production setup with monitoring
-make stop         # Stop all services
-make clean        # Remove all containers
-```
-
-### Management
-```bash
-make status       # Show service status
-make logs         # Show service logs
-make health       # Run health checks
-make shell-python # Shell into Python container
-```
-
-### Testing
-```bash
-make test         # Run unit tests
-make test-unit    # Unit tests only
-make test-integration  # Integration tests
-make test-coverage     # Coverage report
-make benchmark    # Run performance benchmark
-```
-
-See `make help` for all available commands.
-
----
-
-## 🚀 Feature Highlights
-
-### ⚡ Performance Optimizations
-- **Concurrent Processing**: Handle multiple requests simultaneously
-- **Intelligent Caching**: Redis-based caching with smart TTL
-- **Optimized Streaming**: Zero-copy streaming with intelligent buffering
-- **Resource Management**: Automatic cleanup and memory optimization
-
-### 🔒 Enterprise Security
-- **Rate Limiting**: Configurable request limits per client
-- **CORS Protection**: Secure cross-origin requests
-- **Input Validation**: Comprehensive request validation
-- **Security Headers**: Protection against common attacks
-
-### 📊 Monitoring & Analytics
-- **Real-time Metrics**: Prometheus integration
-- **Performance Dashboard**: Grafana visualization
-- **Health Checks**: Comprehensive system monitoring
-- **Structured Logging**: JSON logging with correlation IDs
-
-### 🎯 Platform Support
-- 📺 **YouTube** - Complete support with authentication
-- 📱 **Bilibili** - Full feature support
-- 🐦 **Twitter/X** - Video content extraction
-- 📸 **Instagram** - Video and story support
-- 🎮 **Twitch** - Live and VOD support
-
----
-
-## 📖 API Documentation
-
-### Interactive Documentation
-
-When the API is running, visit:
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-
-### Common Endpoints
+### Option 1: Docker (Recommended)
 
 ```bash
-# Health Check
-GET /health
-GET /api/v2/system/health
+# Build and run with Docker Compose
+docker-compose up --build
 
-# Video Information
-GET /api/v2/videos/{platform}/{video_id}
-
-# Streaming
-GET /api/v2/stream/proxy/{platform}/{video_id}
-GET /api/v2/stream/direct/{platform}/{video_id}
-
-# Batch Operations
-POST /api/v2/videos/batch
-
-# Authentication
-GET /api/v2/auth/status
+# Test the API
+curl http://localhost:8001/health
 ```
 
-### Example Usage
+### Option 2: Local Development
 
-```python
-import httpx
+```bash
+# Prerequisites
+# - Go 1.21 or later
+# - Redis
+# - yt-dlp: pip3 install yt-dlp
 
-# Get video information
-response = httpx.get(
-    "http://localhost:8000/api/v2/videos/youtube/dQw4w9WgXcQ"
-)
-print(response.json())
+# Install dependencies
+go mod download
 
-# Stream video
-response = httpx.get(
-    "http://localhost:8000/api/v2/stream/proxy/youtube/dQw4w9WgXcQ",
-    params={"quality": "720p"}
-)
+# Run Redis
+docker run -d -p 6379:6379 redis:alpine
+
+# Run the API
+go run main.go
+
+# Or build and run
+go build -o video-api
+./video-api
+```
+
+### Option 3: Hot Reload Development
+
+```bash
+# Install air for hot reload
+go install github.com/cosmtrek/air@latest
+
+# Run with hot reload
+air
 ```
 
 ---
 
 ## 🔧 Configuration
 
-### Environment Setup
+Configuration via environment variables:
+
+### Server Configuration
 
 ```bash
-# Copy environment template
-cp env.example .env
-
-# Edit configuration
-vim .env
+PORT=8001                    # Server port
+ENVIRONMENT=production       # Environment (development/production)
+LOG_LEVEL=info              # Log level (debug/info/warn/error)
 ```
 
-### Key Configuration Options
+### Redis Configuration
 
 ```bash
-# Service Control
-PYTHON_MEMORY_LIMIT=512M
-REDIS_MAX_MEMORY=512mb
-
-# Rate Limiting
-RATE_LIMIT_ENABLED=true
-RATE_LIMIT_MAX_REQUESTS=1000
-RATE_LIMIT_WINDOW=60
-
-# Storage
-MAX_STORAGE_GB=50
-TEMP_FILE_RETENTION_HOURS=24
+REDIS_HOST=localhost        # Redis host
+REDIS_PORT=6379            # Redis port
+REDIS_PASSWORD=            # Redis password (optional)
+REDIS_DB=0                 # Redis database number
 ```
 
----
-
-## 🧪 Testing & Quality
-
-### Run Tests
+### Cache Configuration
 
 ```bash
-# All tests with coverage
-make test-all
-
-# Specific test types
-make test-unit
-make test-integration
-make test-e2e
-
-# With coverage report
-make test-coverage
+CACHE_TTL=300              # General cache TTL (seconds)
+VIDEO_INFO_TTL=3600        # Video info cache TTL
+STREAM_URL_TTL=600         # Stream URL cache TTL
+AUTH_STATUS_TTL=1800       # Auth status cache TTL
 ```
 
-### Code Quality
+### Rate Limiting
 
 ```bash
-# Format code
-make format
-
-# Lint code
-make lint
-
-# Type checking
-make type-check
-
-# All quality checks
-make quality
+RATE_LIMIT_ENABLED=true           # Enable rate limiting
+RATE_LIMIT_MAX_REQUESTS=1000      # Max requests per window
+RATE_LIMIT_WINDOW=60              # Window size (seconds)
 ```
 
 ---
 
-## 📊 Performance
+## 📖 API Endpoints
 
-### Benchmarking
+### Health Check
 
 ```bash
-# Run performance benchmark
-make benchmark
-
-# Or manually
-python scripts/performance_comparison.py
+GET /health
+GET /api/v2/system/health
 ```
 
-### Expected Performance
-- **Request Throughput**: 1,000+ RPS
-- **Average Latency**: ~30ms
-- **Memory Usage**: ~100MB
-- **Concurrent Connections**: 100+
+**Response:**
+
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-12-06T22:00:00Z",
+  "version": "2.0.0",
+  "services": {
+    "redis": "healthy",
+    "yt-dlp": "available"
+  },
+  "uptime": "1h30m45s",
+  "memory": {
+    "alloc_mb": 25,
+    "total_alloc_mb": 150,
+    "sys_mb": 35,
+    "num_gc": 12
+  }
+}
+```
+
+### Get Video Information
+
+```bash
+GET /api/v2/videos/:platform/:video_id
+```
+
+**Example:**
+
+```bash
+curl http://localhost:8001/api/v2/videos/youtube/dQw4w9WgXcQ
+```
+
+### Stream Video (Proxy)
+
+```bash
+GET /api/v2/stream/proxy/:platform/:video_id?quality=720p
+```
+
+**Example:**
+
+```bash
+curl http://localhost:8001/api/v2/stream/proxy/youtube/dQw4w9WgXcQ?quality=1080p
+```
+
+### Get Direct Stream URL
+
+```bash
+GET /api/v2/stream/direct/:platform/:video_id?quality=720p
+```
+
+Returns a 302 redirect to the actual stream URL.
+
+### Get Streaming Metrics
+
+```bash
+GET /api/v2/stream/metrics
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Streaming metrics retrieved successfully",
+  "data": {
+    "total_requests": 15420,
+    "cache_hits": 14235,
+    "cache_misses": 1185,
+    "cache_hit_rate": 92.3,
+    "total_bytes_served": 5368709120,
+    "active_streams": 23
+  }
+}
+```
+
+---
+
+## 🎯 Supported Platforms
+
+- **YouTube** (youtube.com, youtu.be)
+- **Bilibili** (bilibili.com, b23.tv)
+- **Twitter/X** (twitter.com, x.com)
+- **Instagram** (instagram.com)
+- **Twitch** (twitch.tv)
+
+---
+
+## 🧪 Testing
+
+### Manual Testing
+
+```bash
+# Health check
+curl http://localhost:8001/health
+
+# Get video info
+curl http://localhost:8001/api/v2/videos/youtube/dQw4w9WgXcQ
+
+# Stream video
+curl http://localhost:8001/api/v2/stream/proxy/youtube/dQw4w9WgXcQ?quality=720p \
+     --output video.mp4
+```
+
+### Performance Testing
+
+```bash
+# Install wrk (load testing tool)
+# macOS
+brew install wrk
+
+# Linux
+sudo apt-get install wrk
+
+# Run load test
+wrk -t12 -c400 -d30s http://localhost:8001/health
+```
+
+**Expected Results:**
+
+- Requests/sec: 4,000-6,000
+- Latency: 1-5ms average
+- Memory: < 50MB
 
 ---
 
 ## 🐳 Docker Deployment
 
-### Development
+### Build Docker Image
 
 ```bash
-# Start development environment
-docker-compose -f docker-compose.dev.yml up -d
-
-# View logs
-docker-compose -f docker-compose.dev.yml logs -f
+docker build -t video-api-go:latest .
 ```
 
-### Production
+### Run with Docker
 
 ```bash
-# Start production environment
+docker run -d \
+  -p 8001:8001 \
+  -e REDIS_HOST=host.docker.internal \
+  --name video-api-go \
+  video-api-go:latest
+```
+
+### Docker Compose
+
+```bash
+# Start all services
 docker-compose up -d
 
-# With monitoring
-make production
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
 ```
 
 ---
 
-## 🤝 Contributing
+## 🛠️ Development
 
-We welcome contributions! Please see our [Contributing Guide](docs/development/CONTRIBUTING.md) for details.
+### Prerequisites
 
-1. **Fork** the repository
-2. **Create** feature branch: `git checkout -b feature/amazing-feature`
-3. **Commit** changes: `git commit -m 'feat: add amazing feature'`
-4. **Push** to branch: `git push origin feature/amazing-feature`
-5. **Open** Pull Request
+- Go 1.21 or later
+- Redis
+- yt-dlp
+- ffmpeg (for video processing)
+
+### Setup Development Environment
+
+```bash
+# Install dependencies
+go mod download
+
+# Run tests
+go test ./...
+
+# Run with hot reload
+go install github.com/cosmtrek/air@latest
+air
+```
+
+### Code Organization
+
+- `main.go` - Application entry point and setup
+- `internal/config` - Configuration management
+- `internal/models` - Data structures
+- `internal/services` - Business logic layer
+- `internal/api` - HTTP handling layer
+
+### Adding New Features
+
+1. Add models in `internal/models/`
+2. Implement business logic in `internal/services/`
+3. Add HTTP handlers in `internal/api/handlers.go`
+4. Register routes in `internal/api/routes.go`
 
 ---
 
-## 📚 Documentation
+## 📝 License
 
-- 📖 **[Complete Documentation](docs/README.md)** - Full documentation index
-- 🚀 **[Quick Start](docs/getting-started/QUICKSTART.md)** - 5-minute setup
-- 💻 **[Getting Started](docs/getting-started/GETTING_STARTED.md)** - Detailed guide
-- 🏗️ **[Architecture](docs/architecture/)** - System architecture
-- 🐳 **[Docker Guide](docs/deployment/DOCKER_GUIDE.md)** - Docker deployment
+MIT License
 
 ---
 
 ## 🆘 Support
 
-- 📚 **Documentation**: [docs/README.md](docs/README.md)
-- 🐛 **Issues**: [GitHub Issues](https://github.com/mythic3011/YouTuberBilBiliHelper/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/mythic3011/YouTuberBilBiliHelper/discussions)
+- **Issues**: [GitHub Issues](https://github.com/mythic3011/YouTuberBilBiliHelper/issues)
 
 ---
 
-## 📄 License
+**Built with Go 🚀 for maximum performance!**
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-Built with:
-- **[FastAPI](https://fastapi.tiangolo.com/)** - Modern Python web framework
-- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** - Video downloading
-- **[Redis/DragonflyDB](https://www.dragonflydb.io/)** - High-performance caching
-- **[Docker](https://www.docker.com/)** - Containerization
-- **[Prometheus](https://prometheus.io/)** - Monitoring
-- **[Grafana](https://grafana.com/)** - Visualization
-
----
-
-**⭐ Star this repository if you find it useful!**
-
-Built with ❤️ using Python, FastAPI, and modern DevOps practices.
-
----
-
-**Last Updated:** October 29, 2025  
-**Version:** 2.0.0  
-**Status:** ✅ Production Ready
+Last Updated: December 6, 2025
