@@ -22,6 +22,8 @@ func LoggerMiddleware(logger *logrus.Logger) gin.HandlerFunc {
 		statusCode := c.Writer.Status()
 		clientIP := c.ClientIP()
 		method := c.Request.Method
+		userAgent := c.Request.UserAgent()
+		referer := c.Request.Referer()
 
 		logger.WithFields(logrus.Fields{
 			"status_code": statusCode,
@@ -30,6 +32,8 @@ func LoggerMiddleware(logger *logrus.Logger) gin.HandlerFunc {
 			"method":      method,
 			"path":        path,
 			"query":       query,
+			"user_agent":  userAgent,
+			"referer":     referer,
 		}).Info("HTTP request")
 	}
 }

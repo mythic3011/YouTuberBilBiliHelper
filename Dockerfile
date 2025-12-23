@@ -5,10 +5,6 @@ FROM golang:1.24-alpine AS builder
 
 WORKDIR /build
 
-# Force module-aware mode and skip GOPATH lookups
-
-
-
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
 
@@ -22,8 +18,8 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Verify modules after source is available
-RUN go mod verify
+# Tidy and verify modules after source is available
+RUN go mod tidy && go mod verify
 
 # Regenerate Swagger docs from inline annotations (mirrors how JS doc generators work)
 RUN swag init -g main.go -o docs
@@ -46,7 +42,8 @@ RUN apk --no-cache add \
     ffmpeg \
     curl \
     tzdata \
-    && pip3 install --no-cache-dir --break-system-packages yt-dlp \
+    nodejs \
+    && pip3 install --no-cache-dir --break-system-packages yt-dlp[default] \
     && rm -rf /var/cache/apk/* /tmp/* /root/.cache
 
 # Copy timezone data from builder

@@ -131,15 +131,28 @@ func (s *VideoService) GetStreamURL(ctx context.Context, platform, videoID, qual
 
 // extractVideoInfo calls yt-dlp to extract video information
 func (s *VideoService) extractVideoInfo(ctx context.Context, videoURL string) (*models.VideoInfo, error) {
-	cmd := exec.CommandContext(ctx, "yt-dlp",
+	args := []string{
 		"--dump-json",
 		"--no-playlist",
-		"--no-warnings",
+		"--no-check-certificates",
+		"--socket-timeout", "30",
 		videoURL,
-	)
+	}
 
-	output, err := cmd.Output()
+	s.logger.WithFields(logrus.Fields{
+		"video_url": videoURL,
+	}).Debug("Fetching video info with yt-dlp")
+
+	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
+
+	output, err := cmd.CombinedOutput()
 	if err != nil {
+		outputStr := strings.TrimSpace(string(output))
+		s.logger.WithFields(logrus.Fields{
+			"video_url": videoURL,
+			"output":    outputStr,
+			"error":     err.Error(),
+		}).Error("yt-dlp command failed for video info")
 		return nil, fmt.Errorf("yt-dlp command failed: %w", err)
 	}
 
@@ -203,15 +216,28 @@ func (s *VideoService) extractVideoInfo(ctx context.Context, videoURL string) (*
 
 // extractPlaylistInfo calls yt-dlp to extract playlist metadata
 func (s *VideoService) extractPlaylistInfo(ctx context.Context, playlistURL string) (*models.PlaylistInfo, error) {
-	cmd := exec.CommandContext(ctx, "yt-dlp",
+	args := []string{
 		"--dump-single-json",
 		"--flat-playlist",
-		"--no-warnings",
+		"--no-check-certificates",
+		"--socket-timeout", "30",
 		playlistURL,
-	)
+	}
 
-	output, err := cmd.Output()
+	s.logger.WithFields(logrus.Fields{
+		"playlist_url": playlistURL,
+	}).Debug("Fetching playlist info with yt-dlp")
+
+	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
+
+	output, err := cmd.CombinedOutput()
 	if err != nil {
+		outputStr := strings.TrimSpace(string(output))
+		s.logger.WithFields(logrus.Fields{
+			"playlist_url": playlistURL,
+			"output":       outputStr,
+			"error":        err.Error(),
+		}).Error("yt-dlp command failed for playlist info")
 		return nil, fmt.Errorf("yt-dlp playlist command failed: %w", err)
 	}
 
@@ -270,17 +296,24 @@ func (s *VideoService) IsPlaylist(ctx context.Context, platform, videoID string)
 
 	videoURL := s.buildVideoURL(platform, videoID)
 
-	cmd := exec.CommandContext(ctx, "yt-dlp",
+	args := []string{
 		"--dump-json",
-		"--no-warnings",
+		"--no-check-certificates",
+		"--socket-timeout", "30",
 		videoURL,
-	)
+	}
 
-	output, err := cmd.Output()
+	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
+
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		s.logger.WithError(err).WithFields(logrus.Fields{
-			"platform": platform,
-			"video_id": videoID,
+		outputStr := strings.TrimSpace(string(output))
+		s.logger.WithFields(logrus.Fields{
+			"platform":   platform,
+			"video_id":   videoID,
+			"video_url":  videoURL,
+			"output":     outputStr,
+			"error":      err.Error(),
 		}).Warn("Failed to detect playlist type")
 		return false, fmt.Errorf("yt-dlp command failed: %w", err)
 	}
@@ -322,20 +355,56 @@ func (s *VideoService) IsPlaylist(ctx context.Context, platform, videoID string)
 func (s *VideoService) extractStreamURL(ctx context.Context, videoURL, quality string) (string, error) {
 	formatSelector := s.getFormatSelector(quality)
 
-	cmd := exec.CommandContext(ctx, "yt-dlp",
+	// Build command with additional flags for better compatibility
+	args := []string{
 		"--get-url",
 		"-f", formatSelector,
 		"--no-playlist",
-		"--no-warnings",
-		videoURL,
-	)
-
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("yt-dlp command failed: %w", err)
+		"--no-check-certificates",
+		"--socket-timeout", "30",
+		"--js-runtimes", "node",
+		"--extractor-args", "youtube:player_client=ios,web",
+		"--extractor-args", "youtube:skip=dash,hls",
 	}
 
-	return sanitizeStreamURL(string(output))
+	args = append(args, videoURL)
+
+	s.logger.WithFields(logrus.Fields{
+		"video_url": videoURL,
+		"quality":   quality,
+	}).Debug("Executing yt-dlp command for stream URL")
+
+	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
+
+	output, err := cmd.CombinedOutput()
+	outputStr := strings.TrimSpace(string(output))
+
+	if err != nil {
+		// Truncate output for logging if too long
+		logOutput := outputStr
+		if len(logOutput) > 500 {
+			logOutput = logOutput[:500] + "... (truncated)"
+		}
+		
+		s.logger.WithFields(logrus.Fields{
+			"video_url":  videoURL,
+			"quality":    quality,
+			"output":     logOutput,
+			"error":      err.Error(),
+		}).Error("yt-dlp command failed for stream extraction")
+		
+		return "", fmt.Errorf("yt-dlp failed: %v", err)
+	}
+
+	if outputStr == "" {
+		s.logger.WithFields(logrus.Fields{
+			"video_url": videoURL,
+			"quality":   quality,
+		}).Warn("yt-dlp returned empty output")
+		return "", fmt.Errorf("yt-dlp returned empty URL")
+	}
+
+	return sanitizeStreamURL(outputStr)
 }
 
 // sanitizeStreamURL strips whitespace and multi-line entries, returning the first valid URL.
@@ -358,6 +427,11 @@ func sanitizeStreamURL(raw string) (string, error) {
 
 // buildVideoURL constructs a video URL from platform and ID
 func (s *VideoService) buildVideoURL(platform, videoID string) string {
+	// If videoID is already a full URL, return it as-is
+	if strings.HasPrefix(strings.ToLower(videoID), "http://") || strings.HasPrefix(strings.ToLower(videoID), "https://") {
+		return videoID
+	}
+
 	switch strings.ToLower(platform) {
 	case "youtube":
 		return fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID)

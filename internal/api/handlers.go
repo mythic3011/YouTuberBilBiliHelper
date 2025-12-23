@@ -106,9 +106,13 @@ func (h *Handler) GetVideoInfo(c *gin.Context) {
 
 	// Auto-detect platform if a full URL is provided
 	if strings.HasPrefix(strings.ToLower(platform), "http") {
-		fullURL := platform
-		if videoID != "" {
-			fullURL = platform + "/" + videoID
+		// The entire URL was passed in the path
+		// Simply concatenate them to get the full URL
+		fullURL := platform + videoID
+		
+		// Append query string if present
+		if c.Request.URL.RawQuery != "" {
+			fullURL = fullURL + "?" + c.Request.URL.RawQuery
 		}
 		platform = h.video.DetectPlatform(fullURL)
 		videoID = fullURL
@@ -153,9 +157,13 @@ func (h *Handler) GetPlaylistInfo(c *gin.Context) {
 
 	// Auto-detect platform if a full URL is provided
 	if strings.HasPrefix(strings.ToLower(platform), "http") {
-		fullURL := platform
-		if playlistID != "" {
-			fullURL = platform + "/" + playlistID
+		// The entire URL was passed in the path
+		// Simply concatenate them to get the full URL
+		fullURL := platform + playlistID
+		
+		// Append query string if present
+		if c.Request.URL.RawQuery != "" {
+			fullURL = fullURL + "?" + c.Request.URL.RawQuery
 		}
 		platform = h.video.DetectPlatform(fullURL)
 		playlistID = fullURL
@@ -198,22 +206,40 @@ func (h *Handler) GetPlaylistInfo(c *gin.Context) {
 // @Router       /api/v2/stream/{platform}/{video_id} [get]
 func (h *Handler) StreamVideo(c *gin.Context) {
 	platform := c.Param("platform")
-	videoID := strings.TrimPrefix(c.Param("video_id"), "/")
+	videoID := c.Param("video_id")
 	quality := c.DefaultQuery("quality", "best")
 	mode := strings.ToLower(c.DefaultQuery("mode", ""))
 
+	h.logger.WithFields(logrus.Fields{
+		"raw_platform": platform,
+		"raw_video_id": videoID,
+		"raw_query":    c.Request.URL.RawQuery,
+		"full_path":    c.Request.URL.Path,
+	}).Debug("Received stream request")
+
 	// Auto-detect platform if a full URL is provided
 	if strings.HasPrefix(strings.ToLower(platform), "http") {
-		// The entire URL was passed as the platform parameter
-		fullURL := platform
-		if videoID != "" {
-			fullURL = platform + "/" + videoID
+		// The entire URL was passed in the path
+		// platform: "https:" or "http:"
+		// videoID: "//www.youtube.com/watch" 
+		// Simply concatenate them to get the full URL
+		fullURL := platform + videoID
+		
+		// Append query string if present (for URLs like youtube.com/watch?v=...)
+		if c.Request.URL.RawQuery != "" {
+			fullURL = fullURL + "?" + c.Request.URL.RawQuery
 		}
+		
+		h.logger.WithFields(logrus.Fields{
+			"reconstructed_url": fullURL,
+		}).Debug("Reconstructed full URL from path")
+		
 		platform = h.video.DetectPlatform(fullURL)
 		videoID = fullURL
+		
 		h.logger.WithFields(logrus.Fields{
 			"detected_platform": platform,
-			"full_url":          fullURL,
+			"final_video_id":    videoID,
 		}).Debug("Auto-detected platform from full URL")
 	}
 
