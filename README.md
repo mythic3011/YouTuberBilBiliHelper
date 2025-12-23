@@ -196,6 +196,28 @@ GET /api/v2/stream/proxy/:platform/:video_id?quality=720p
 curl http://localhost:8001/api/v2/stream/proxy/youtube/dQw4w9WgXcQ?quality=1080p
 ```
 
+> **Tip:** You can also pass the full video URL with `auto` to let the API detect the platform on the fly.
+
+**Example (auto-detect platform):**
+
+```bash
+curl "http://localhost:8001/api/v2/stream/proxy/auto/https://music.youtube.com/watch?v=dQw4w9WgXcQ"
+```
+
+### Get Playlist Information
+
+```bash
+GET /api/v2/playlists/:platform/:playlist_id
+```
+
+**Example:**
+
+```bash
+curl "http://localhost:8001/api/v2/playlists/auto/https://music.youtube.com/playlist?list=PLGiCbGbC2CE3v3tofFoRBLjJS4XUMjgLO&si=zEWAaTAaQ5iHM-X3"
+```
+
+Returns playlist metadata plus the flattened list of entries.
+
 ### Get Direct Stream URL
 
 ```bash

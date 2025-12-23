@@ -4,10 +4,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
 	"video-streaming-api/internal/models"
 	"video-streaming-api/internal/services"
+
+	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 )
 
 // Handler holds all HTTP handlers
@@ -115,6 +116,43 @@ func (h *Handler) GetVideoInfo(c *gin.Context) {
 	c.JSON(http.StatusOK, models.SuccessResponse{
 		Success:   true,
 		Message:   "Video information retrieved successfully",
+		Data:      info,
+		Timestamp: time.Now(),
+	})
+}
+
+// GetPlaylistInfo godoc
+// @Summary      Get playlist information
+// @Description  Retrieve playlist metadata and entries
+// @Tags         playlists
+// @Produce      json
+// @Param        platform    path      string  true  "Platform (youtube, bilibili, etc.)"
+// @Param        playlist_id path      string  true  "Playlist ID or URL"
+// @Success      200         {object}  models.PlaylistInfo
+// @Failure      400         {object}  models.ErrorResponse
+// @Router       /api/v2/playlists/{platform}/{playlist_id} [get]
+func (h *Handler) GetPlaylistInfo(c *gin.Context) {
+	platform := c.Param("platform")
+	playlistID := c.Param("playlist_id")
+
+	if !h.video.ValidatePlatform(platform) {
+		h.errorResponse(c, http.StatusBadRequest, "Unsupported platform", platform)
+		return
+	}
+
+	info, err := h.video.GetPlaylistInfo(c.Request.Context(), platform, playlistID)
+	if err != nil {
+		h.logger.WithError(err).WithFields(logrus.Fields{
+			"platform":    platform,
+			"playlist_id": playlistID,
+		}).Error("Failed to get playlist info")
+		h.errorResponse(c, http.StatusBadRequest, "Failed to get playlist info", err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, models.SuccessResponse{
+		Success:   true,
+		Message:   "Playlist information retrieved successfully",
 		Data:      info,
 		Timestamp: time.Now(),
 	})

@@ -46,6 +46,27 @@ type StreamResponse struct {
 	ExpiresAt time.Time `json:"expires_at,omitempty"`
 }
 
+// PlaylistInfo represents playlist metadata
+type PlaylistInfo struct {
+	ID          string          `json:"id"`
+	Title       string          `json:"title"`
+	Description string          `json:"description,omitempty"`
+	Uploader    string          `json:"uploader,omitempty"`
+	WebpageURL  string          `json:"webpage_url,omitempty"`
+	EntryCount  int             `json:"entry_count"`
+	Platform    string          `json:"platform"`
+	Entries     []PlaylistEntry `json:"entries"`
+}
+
+// PlaylistEntry represents a video entry inside a playlist
+type PlaylistEntry struct {
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	Duration   int    `json:"duration,omitempty"`
+	Uploader   string `json:"uploader,omitempty"`
+	WebpageURL string `json:"webpage_url,omitempty"`
+}
+
 // HealthResponse represents system health status
 type HealthResponse struct {
 	Status    string            `json:"status"`

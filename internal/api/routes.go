@@ -45,5 +45,11 @@ func SetupRoutes(router *gin.Engine, handler *Handler, logger *logrus.Logger) {
 		{
 			videos.GET("/:platform/:video_id", handler.GetVideoInfo)
 		}
+
+		// Playlist routes
+		playlists := v2.Group("/playlists")
+		{
+			playlists.GET("/:platform/:playlist_id", handler.GetPlaylistInfo)
+		}
 	}
 }

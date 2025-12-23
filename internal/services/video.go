@@ -64,6 +64,32 @@ func (s *VideoService) GetVideoInfo(ctx context.Context, platform, videoID strin
 	return info, nil
 }
 
+// GetPlaylistInfo retrieves playlist metadata using yt-dlp
+func (s *VideoService) GetPlaylistInfo(ctx context.Context, platform, playlistID string) (*models.PlaylistInfo, error) {
+	cacheKey := GenerateCacheKey("playlist", platform, playlistID)
+
+	var cachedInfo models.PlaylistInfo
+	if err := s.redis.GetJSON(ctx, cacheKey, &cachedInfo); err == nil {
+		s.logger.WithFields(logrus.Fields{
+			"platform":    platform,
+			"playlist_id": playlistID,
+		}).Debug("Playlist info cache hit")
+		return &cachedInfo, nil
+	}
+
+	playlistURL := s.buildVideoURL(platform, playlistID)
+	info, err := s.extractPlaylistInfo(ctx, playlistURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract playlist info: %w", err)
+	}
+
+	if err := s.redis.SetJSON(ctx, cacheKey, info, s.cfg.VideoInfoTTL); err != nil {
+		s.logger.WithError(err).Warn("Failed to cache playlist info")
+	}
+
+	return info, nil
+}
+
 // GetStreamURL retrieves a stream URL for a video
 func (s *VideoService) GetStreamURL(ctx context.Context, platform, videoID, quality string) (string, error) {
 	// Generate cache key
@@ -174,6 +200,63 @@ func (s *VideoService) extractVideoInfo(ctx context.Context, videoURL string) (*
 	return info, nil
 }
 
+// extractPlaylistInfo calls yt-dlp to extract playlist metadata
+func (s *VideoService) extractPlaylistInfo(ctx context.Context, playlistURL string) (*models.PlaylistInfo, error) {
+	cmd := exec.CommandContext(ctx, "yt-dlp",
+		"--dump-single-json",
+		"--flat-playlist",
+		"--no-warnings",
+		playlistURL,
+	)
+
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("yt-dlp playlist command failed: %w", err)
+	}
+
+	var ytdlpPlaylist struct {
+		ID          string `json:"id"`
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		Uploader    string `json:"uploader"`
+		WebpageURL  string `json:"webpage_url"`
+		Entries     []struct {
+			ID         string `json:"id"`
+			Title      string `json:"title"`
+			Duration   int    `json:"duration"`
+			Uploader   string `json:"uploader"`
+			WebpageURL string `json:"webpage_url"`
+		} `json:"entries"`
+	}
+
+	if err := json.Unmarshal(output, &ytdlpPlaylist); err != nil {
+		return nil, fmt.Errorf("failed to parse yt-dlp playlist output: %w", err)
+	}
+
+	info := &models.PlaylistInfo{
+		ID:          ytdlpPlaylist.ID,
+		Title:       ytdlpPlaylist.Title,
+		Description: ytdlpPlaylist.Description,
+		Uploader:    ytdlpPlaylist.Uploader,
+		WebpageURL:  ytdlpPlaylist.WebpageURL,
+		EntryCount:  len(ytdlpPlaylist.Entries),
+		Platform:    s.detectPlatform(playlistURL),
+		Entries:     make([]models.PlaylistEntry, 0, len(ytdlpPlaylist.Entries)),
+	}
+
+	for _, entry := range ytdlpPlaylist.Entries {
+		info.Entries = append(info.Entries, models.PlaylistEntry{
+			ID:         entry.ID,
+			Title:      entry.Title,
+			Duration:   entry.Duration,
+			Uploader:   entry.Uploader,
+			WebpageURL: entry.WebpageURL,
+		})
+	}
+
+	return info, nil
+}
+
 // extractStreamURL gets the best stream URL for a given quality
 func (s *VideoService) extractStreamURL(ctx context.Context, videoURL, quality string) (string, error) {
 	formatSelector := s.getFormatSelector(quality)
@@ -253,7 +336,7 @@ func (s *VideoService) detectPlatform(url string) string {
 // getFormatSelector returns the yt-dlp format selector for a quality
 func (s *VideoService) getFormatSelector(quality string) string {
 	switch strings.ToLower(quality) {
-	case "best", "":
+	case "best", "", "auto", "highest":
 		return "best[ext=mp4][acodec!=none]/best[acodec!=none]/best"
 	case "worst":
 		return "worstvideo+worstaudio/worst"
@@ -276,7 +359,7 @@ func (s *VideoService) getFormatSelector(quality string) string {
 
 // ValidatePlatform checks if a platform is supported
 func (s *VideoService) ValidatePlatform(platform string) bool {
-	supported := []string{"youtube", "bilibili", "twitter", "x", "instagram", "twitch"}
+	supported := []string{"youtube", "bilibili", "twitter", "x", "instagram", "twitch", "auto"}
 	platform = strings.ToLower(platform)
 	for _, p := range supported {
 		if p == platform {
