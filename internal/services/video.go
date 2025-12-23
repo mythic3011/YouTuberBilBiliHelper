@@ -180,7 +180,7 @@ func (s *VideoService) extractVideoInfo(ctx context.Context, videoURL string) (*
 		ViewCount:   ytdlpInfo.ViewCount,
 		LikeCount:   ytdlpInfo.LikeCount,
 		UploadDate:  ytdlpInfo.UploadDate,
-		Platform:    s.detectPlatform(videoURL),
+		Platform:    s.DetectPlatform(videoURL),
 		Formats:     make([]models.Format, 0),
 	}
 
@@ -241,7 +241,7 @@ func (s *VideoService) extractPlaylistInfo(ctx context.Context, playlistURL stri
 		Uploader:    ytdlpPlaylist.Uploader,
 		WebpageURL:  ytdlpPlaylist.WebpageURL,
 		EntryCount:  len(ytdlpPlaylist.Entries),
-		Platform:    s.detectPlatform(playlistURL),
+		Platform:    s.DetectPlatform(playlistURL),
 		Entries:     make([]models.PlaylistEntry, 0, len(ytdlpPlaylist.Entries)),
 	}
 
@@ -375,8 +375,8 @@ func (s *VideoService) buildVideoURL(platform, videoID string) string {
 	}
 }
 
-// detectPlatform detects the platform from a URL
-func (s *VideoService) detectPlatform(url string) string {
+// DetectPlatform detects the platform from a URL
+func (s *VideoService) DetectPlatform(url string) string {
 	url = strings.ToLower(url)
 	switch {
 	case strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be"):

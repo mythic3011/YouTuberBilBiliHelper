@@ -104,6 +104,16 @@ func (h *Handler) GetVideoInfo(c *gin.Context) {
 	platform := c.Param("platform")
 	videoID := c.Param("video_id")
 
+	// Auto-detect platform if a full URL is provided
+	if strings.HasPrefix(strings.ToLower(platform), "http") {
+		fullURL := platform
+		if videoID != "" {
+			fullURL = platform + "/" + videoID
+		}
+		platform = h.video.DetectPlatform(fullURL)
+		videoID = fullURL
+	}
+
 	if !h.video.ValidatePlatform(platform) {
 		h.errorResponse(c, http.StatusBadRequest, "Unsupported platform", platform)
 		return
@@ -140,6 +150,16 @@ func (h *Handler) GetVideoInfo(c *gin.Context) {
 func (h *Handler) GetPlaylistInfo(c *gin.Context) {
 	platform := c.Param("platform")
 	playlistID := c.Param("playlist_id")
+
+	// Auto-detect platform if a full URL is provided
+	if strings.HasPrefix(strings.ToLower(platform), "http") {
+		fullURL := platform
+		if playlistID != "" {
+			fullURL = platform + "/" + playlistID
+		}
+		platform = h.video.DetectPlatform(fullURL)
+		playlistID = fullURL
+	}
 
 	if !h.video.ValidatePlatform(platform) {
 		h.errorResponse(c, http.StatusBadRequest, "Unsupported platform", platform)
@@ -181,6 +201,21 @@ func (h *Handler) StreamVideo(c *gin.Context) {
 	videoID := strings.TrimPrefix(c.Param("video_id"), "/")
 	quality := c.DefaultQuery("quality", "best")
 	mode := strings.ToLower(c.DefaultQuery("mode", ""))
+
+	// Auto-detect platform if a full URL is provided
+	if strings.HasPrefix(strings.ToLower(platform), "http") {
+		// The entire URL was passed as the platform parameter
+		fullURL := platform
+		if videoID != "" {
+			fullURL = platform + "/" + videoID
+		}
+		platform = h.video.DetectPlatform(fullURL)
+		videoID = fullURL
+		h.logger.WithFields(logrus.Fields{
+			"detected_platform": platform,
+			"full_url":          fullURL,
+		}).Debug("Auto-detected platform from full URL")
+	}
 
 	if !h.video.ValidatePlatform(platform) {
 		h.errorResponse(c, http.StatusBadRequest, "Unsupported platform", platform)
