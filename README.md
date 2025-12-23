@@ -132,6 +132,14 @@ RATE_LIMIT_MAX_REQUESTS=1000      # Max requests per window
 RATE_LIMIT_WINDOW=60              # Window size (seconds)
 ```
 
+### Smart Proxy Configuration
+
+```bash
+SMART_PROXY_ENABLED=true          # Enable smart proxy routing
+PROXY_COUNTRIES=CN                # Countries that use proxy (comma-separated)
+DEFAULT_STREAM_MODE=direct        # Default mode: 'proxy' or 'direct'
+```
+
 ---
 
 ## 📖 API Endpoints
@@ -184,24 +192,36 @@ curl http://localhost:8001/api/v2/videos/youtube/dQw4w9WgXcQ
 curl "http://localhost:8001/api/v2/videos/auto/https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 ```
 
-### Stream Video (Proxy)
+### Stream Video (Smart Proxy/Direct)
 
 ```bash
-GET /api/v2/stream/proxy/:platform/:video_id?quality=720p
+GET /api/v2/stream/:platform/:video_id?quality=best&mode=auto
 ```
 
-**Example:**
+Automatically routes traffic through proxy for configured countries (default: CN) or serves direct redirects for others. Override with `mode=proxy` or `mode=direct` query parameter.
+
+**Query Parameters:**
+
+- `quality`: Video quality (best, auto, highest, 1080p, 720p, 480p, 360p)
+- `mode`: Force routing mode (proxy, direct, or omit for smart detection)
+- `country`: Override detected country for testing (e.g., `country=CN`)
+
+**Example (smart routing):**
 
 ```bash
-curl http://localhost:8001/api/v2/stream/proxy/youtube/dQw4w9WgXcQ?quality=1080p
+curl "http://localhost:8001/api/v2/stream/youtube/dQw4w9WgXcQ?quality=1080p"
 ```
 
-> **Tip:** You can also pass the full video URL with `auto` to let the API detect the platform on the fly.
-
-**Example (auto-detect platform):**
+**Example (force proxy):**
 
 ```bash
-curl "http://localhost:8001/api/v2/stream/proxy/auto/https://music.youtube.com/watch?v=dQw4w9WgXcQ"
+curl "http://localhost:8001/api/v2/stream/youtube/dQw4w9WgXcQ?mode=proxy"
+```
+
+**Example (auto-detect platform with full URL):**
+
+```bash
+curl "http://localhost:8001/api/v2/stream/auto/https://music.youtube.com/watch?v=dQw4w9WgXcQ"
 ```
 
 ### Get Playlist Information
@@ -217,14 +237,6 @@ curl "http://localhost:8001/api/v2/playlists/auto/https://music.youtube.com/play
 ```
 
 Returns playlist metadata plus the flattened list of entries.
-
-### Get Direct Stream URL
-
-```bash
-GET /api/v2/stream/direct/:platform/:video_id?quality=720p
-```
-
-Returns a 302 redirect to the actual stream URL.
 
 ### Get Streaming Metrics
 
@@ -272,9 +284,12 @@ curl http://localhost:8001/health
 # Get video info
 curl http://localhost:8001/api/v2/videos/youtube/dQw4w9WgXcQ
 
-# Stream video
-curl http://localhost:8001/api/v2/stream/proxy/youtube/dQw4w9WgXcQ?quality=720p \
+# Stream video (smart routing)
+curl http://localhost:8001/api/v2/stream/youtube/dQw4w9WgXcQ?quality=720p \
      --output video.mp4
+
+# Get playlist info
+curl "http://localhost:8001/api/v2/playlists/auto/https://music.youtube.com/playlist?list=PLGiCbGbC2CE3v3tofFoRBLjJS4XUMjgLO"
 ```
 
 ### Performance Testing
@@ -386,4 +401,4 @@ MIT License
 
 **Built with Go 🚀 for maximum performance!**
 
-Last Updated: December 6, 2025
+Last Updated: December 23, 2025
