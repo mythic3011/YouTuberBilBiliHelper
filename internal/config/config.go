@@ -22,7 +22,7 @@ type Config struct {
 // Load reads configuration values from environment variables with sensible defaults.
 func Load() *Config {
 	cfg := &Config{
-		Environment:   getEnv("APP_ENV", "development"),
+		Environment:   getEnvMulti([]string{"APP_ENV", "ENVIRONMENT"}, "development"),
 		Port:          getEnv("PORT", "8001"),
 		LogLevel:      getEnv("LOG_LEVEL", "info"),
 		RedisHost:     getEnv("REDIS_HOST", "127.0.0.1"),
@@ -39,6 +39,15 @@ func Load() *Config {
 func getEnv(key, fallback string) string {
 	if val, ok := os.LookupEnv(key); ok && val != "" {
 		return val
+	}
+	return fallback
+}
+
+func getEnvMulti(keys []string, fallback string) string {
+	for _, key := range keys {
+		if val, ok := os.LookupEnv(key); ok && val != "" {
+			return val
+		}
 	}
 	return fallback
 }
