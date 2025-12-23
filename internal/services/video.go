@@ -70,13 +70,17 @@ func (s *VideoService) GetStreamURL(ctx context.Context, platform, videoID, qual
 	cacheKey := GenerateCacheKey("stream", platform, videoID, quality)
 
 	// Try cache first
-	if url, err := s.redis.Get(ctx, cacheKey); err == nil {
-		s.logger.WithFields(logrus.Fields{
-			"platform": platform,
-			"video_id": videoID,
-			"quality":  quality,
-		}).Debug("Stream URL cache hit")
-		return url, nil
+	if cached, err := s.redis.Get(ctx, cacheKey); err == nil {
+		if sanitized, err := sanitizeStreamURL(cached); err == nil {
+			s.logger.WithFields(logrus.Fields{
+				"platform": platform,
+				"video_id": videoID,
+				"quality":  quality,
+			}).Debug("Stream URL cache hit")
+			return sanitized, nil
+		}
+
+		s.logger.WithError(err).Warn("Cached stream URL invalid, regenerating")
 	}
 
 	// Cache miss - get from yt-dlp
@@ -84,6 +88,10 @@ func (s *VideoService) GetStreamURL(ctx context.Context, platform, videoID, qual
 	streamURL, err := s.extractStreamURL(ctx, videoURL, quality)
 	if err != nil {
 		return "", fmt.Errorf("failed to extract stream URL: %w", err)
+	}
+	streamURL, err = sanitizeStreamURL(streamURL)
+	if err != nil {
+		return "", err
 	}
 
 	// Cache the result
@@ -183,12 +191,22 @@ func (s *VideoService) extractStreamURL(ctx context.Context, videoURL, quality s
 		return "", fmt.Errorf("yt-dlp command failed: %w", err)
 	}
 
-	raw := strings.TrimSpace(string(output))
-	for _, line := range strings.Split(raw, "\n") {
+	return sanitizeStreamURL(string(output))
+}
+
+// sanitizeStreamURL strips whitespace and multi-line entries, returning the first valid URL.
+func sanitizeStreamURL(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", fmt.Errorf("no stream URL found")
+	}
+
+	for _, line := range strings.Split(trimmed, "\n") {
 		line = strings.TrimSpace(line)
-		if line != "" {
-			return line, nil
+		if line == "" {
+			continue
 		}
+		return line, nil
 	}
 
 	return "", fmt.Errorf("no stream URL found")

@@ -12,6 +12,9 @@ WORKDIR /build
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
 
+# Install swagger generator so docs are rebuilt automatically during image builds
+RUN go install github.com/swaggo/swag/cmd/swag@latest
+
 # Copy go mod files first for better layer caching
 COPY go.mod go.sum ./
 RUN go mod download
@@ -21,6 +24,9 @@ COPY . .
 
 # Verify modules after source is available
 RUN go mod verify
+
+# Regenerate Swagger docs from inline annotations (mirrors how JS doc generators work)
+RUN swag init -g main.go -o docs
 
 # Build the application with optimizations
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \

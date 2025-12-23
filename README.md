@@ -85,6 +85,15 @@ air
 
 ---
 
+## 📚 API Documentation
+
+- The OpenAPI/Swagger docs are generated from inline annotations (similar to how JSDoc extracts comments). No manual JSON editing is required.
+- Docker builds now install the `swag` CLI and run `swag init` automatically, so containers always embed the latest spec.
+- For local development (if you want to preview docs without rebuilding Docker), you can still run `swag init -g main.go -o docs`, but this is optional.
+- Commit the refreshed `docs/` output if you regenerate locally so everyone stays in sync.
+
+---
+
 ## 🔧 Configuration
 
 Configuration via environment variables:
