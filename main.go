@@ -18,6 +18,9 @@ import (
 	"video-streaming-api/internal/services"
 )
 
+// Version is set via -ldflags during Docker builds; defaults to dev locally.
+var Version = "dev"
+
 // @title           Video Streaming API
 // @version         1.0
 // @description     High-performance video streaming and processing API built with Go
