@@ -35,7 +35,7 @@ func SetupRoutes(router *gin.Engine, handler *Handler, logger *logrus.Logger) {
 		// Streaming routes
 		stream := v2.Group("/stream")
 		{
-			stream.GET("/:platform/:video_id", handler.StreamVideo)
+			stream.GET("/:platform/*video_id", handler.StreamVideo)
 			stream.GET("/metrics", handler.GetStreamMetrics)
 		}
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"video-streaming-api/internal/config"
 	"video-streaming-api/internal/models"
@@ -255,6 +256,66 @@ func (s *VideoService) extractPlaylistInfo(ctx context.Context, playlistURL stri
 	}
 
 	return info, nil
+}
+
+// IsPlaylist checks if the given video ID/URL is a playlist
+func (s *VideoService) IsPlaylist(ctx context.Context, platform, videoID string) (bool, error) {
+	// Generate cache key for playlist detection
+	cacheKey := GenerateCacheKey("is_playlist", platform, videoID)
+
+	// Try cache first
+	if cached, err := s.redis.Get(ctx, cacheKey); err == nil {
+		return strings.EqualFold(cached, "true"), nil
+	}
+
+	videoURL := s.buildVideoURL(platform, videoID)
+
+	cmd := exec.CommandContext(ctx, "yt-dlp",
+		"--dump-json",
+		"--no-warnings",
+		videoURL,
+	)
+
+	output, err := cmd.Output()
+	if err != nil {
+		s.logger.WithError(err).WithFields(logrus.Fields{
+			"platform": platform,
+			"video_id": videoID,
+		}).Warn("Failed to detect playlist type")
+		return false, fmt.Errorf("yt-dlp command failed: %w", err)
+	}
+
+	var ytdlpInfo struct {
+		Entries       interface{} `json:"entries"`
+		ID            string      `json:"id"`
+		_Type         string      `json:"_type"`
+		IsPlaylist    bool        `json:"is_playlist"`
+	}
+
+	if err := json.Unmarshal(output, &ytdlpInfo); err != nil {
+		s.logger.WithError(err).Warn("Failed to parse playlist detection output")
+		return false, fmt.Errorf("failed to parse yt-dlp output: %w", err)
+	}
+
+	// Determine if it's a playlist based on multiple indicators
+	isPlaylist := ytdlpInfo.Entries != nil || ytdlpInfo.IsPlaylist || ytdlpInfo._Type == "playlist"
+
+	// Cache the result with a longer TTL for playlist detection (24 hours)
+	result := "false"
+	if isPlaylist {
+		result = "true"
+	}
+	if err := s.redis.Set(ctx, cacheKey, result, 24*time.Hour); err != nil {
+		s.logger.WithError(err).Debug("Failed to cache playlist detection result")
+	}
+
+	s.logger.WithFields(logrus.Fields{
+		"platform":    platform,
+		"video_id":    videoID,
+		"is_playlist": isPlaylist,
+	}).Debug("Playlist type detected")
+
+	return isPlaylist, nil
 }
 
 // extractStreamURL gets the best stream URL for a given quality

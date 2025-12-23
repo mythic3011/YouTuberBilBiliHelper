@@ -166,7 +166,7 @@ func (h *Handler) GetPlaylistInfo(c *gin.Context) {
 
 // StreamVideo handles smart streaming decisions.
 // @Summary      Stream video (smart proxy/direct)
-// @Description  Automatically proxies traffic for configured countries (defaults to CN) while serving others via direct redirect; can be overridden via query parameters.
+// @Description  Automatically proxies traffic for configured countries (defaults to CN) while serving others via direct redirect; can be overridden via query parameters. Returns error if m3u8 format is detected on non-playlist content.
 // @Tags         stream
 // @Produce      json
 // @Param        platform  path      string  true  "Platform (youtube, bilibili, etc.)"
@@ -178,13 +178,22 @@ func (h *Handler) GetPlaylistInfo(c *gin.Context) {
 // @Router       /api/v2/stream/{platform}/{video_id} [get]
 func (h *Handler) StreamVideo(c *gin.Context) {
 	platform := c.Param("platform")
-	videoID := c.Param("video_id")
+	videoID := strings.TrimPrefix(c.Param("video_id"), "/")
 	quality := c.DefaultQuery("quality", "best")
 	mode := strings.ToLower(c.DefaultQuery("mode", ""))
 
 	if !h.video.ValidatePlatform(platform) {
 		h.errorResponse(c, http.StatusBadRequest, "Unsupported platform", platform)
 		return
+	}
+
+	// Check if this is a playlist
+	isPlaylist, err := h.video.IsPlaylist(c.Request.Context(), platform, videoID)
+	if err != nil {
+		h.logger.WithError(err).WithFields(logrus.Fields{
+			"platform": platform,
+			"video_id": videoID,
+		}).Warn("Failed to check if content is playlist, proceeding with caution")
 	}
 
 	useProxy := h.cfg != nil && strings.EqualFold(h.cfg.DefaultStreamMode, "proxy")
@@ -201,16 +210,17 @@ func (h *Handler) StreamVideo(c *gin.Context) {
 		modeLabel = "proxy"
 	}
 	reqFields := logrus.Fields{
-		"platform": platform,
-		"video_id": videoID,
-		"quality":  quality,
-		"mode":     modeLabel,
-		"country":  strings.ToUpper(h.detectCountry(c)),
+		"platform":  platform,
+		"video_id":  videoID,
+		"quality":   quality,
+		"mode":      modeLabel,
+		"country":   strings.ToUpper(h.detectCountry(c)),
+		"is_playlist": isPlaylist,
 	}
 
 	if useProxy {
 		h.logger.WithFields(reqFields).Info("Smart streaming via proxy")
-		if err := h.streaming.StreamVideo(c, platform, videoID, quality); err != nil {
+		if err := h.streaming.StreamVideo(c, platform, videoID, quality, isPlaylist); err != nil {
 			h.logger.WithError(err).Error("Failed to stream video")
 			if !c.Writer.Written() {
 				h.errorResponse(c, http.StatusInternalServerError, "Failed to stream video", err.Error())
@@ -226,8 +236,21 @@ func (h *Handler) StreamVideo(c *gin.Context) {
 		return
 	}
 
+	// Check if the returned URL is m3u8 and this is not a playlist
+	if !isPlaylist && h.isM3U8URL(streamURL) {
+		h.logger.WithFields(reqFields).Warn("m3u8 format detected for non-playlist content")
+		h.errorResponse(c, http.StatusBadRequest, "m3u8 format not supported for non-playlist content", "This content appears to be a playlist. Please use the playlist endpoint instead.")
+		return
+	}
+
 	h.logger.WithFields(reqFields).Info("Smart streaming via direct redirect")
 	c.Redirect(http.StatusFound, streamURL)
+}
+
+// isM3U8URL checks if the given URL is an m3u8 playlist URL
+func (h *Handler) isM3U8URL(url string) bool {
+	lowerURL := strings.ToLower(url)
+	return strings.Contains(lowerURL, ".m3u8") || strings.HasSuffix(lowerURL, "/playlist.m3u8")
 }
 
 // GetStreamMetrics handles streaming metrics requests

@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
 	"video-streaming-api/internal/config"
 	"video-streaming-api/internal/models"
+
+	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 )
 
 // StreamingService handles video streaming operations
@@ -40,7 +42,7 @@ func NewStreamingService(video *VideoService, redis *RedisService, cfg *config.C
 }
 
 // StreamVideo streams a video through the proxy
-func (s *StreamingService) StreamVideo(c *gin.Context, platform, videoID, quality string) error {
+func (s *StreamingService) StreamVideo(c *gin.Context, platform, videoID, quality string, isPlaylist bool) error {
 	atomic.AddInt64(&s.totalRequests, 1)
 	atomic.AddInt32(&s.activeStreams, 1)
 	defer atomic.AddInt32(&s.activeStreams, -1)
@@ -52,6 +54,18 @@ func (s *StreamingService) StreamVideo(c *gin.Context, platform, videoID, qualit
 	if err != nil {
 		atomic.AddInt64(&s.cacheMisses, 1)
 		return fmt.Errorf("failed to get stream URL: %w", err)
+	}
+
+	// Check if the returned URL is m3u8 and this is not a playlist
+	if !isPlaylist && s.isM3U8URL(streamURL) {
+		s.logger.WithFields(logrus.Fields{
+			"platform":     platform,
+			"video_id":     videoID,
+			"quality":      quality,
+			"stream_url":   streamURL,
+			"is_playlist":  isPlaylist,
+		}).Warn("m3u8 format detected for non-playlist content")
+		return fmt.Errorf("m3u8 format not supported for non-playlist content")
 	}
 
 	atomic.AddInt64(&s.cacheHits, 1)
@@ -125,6 +139,12 @@ func (s *StreamingService) GetDirectStreamURL(ctx context.Context, platform, vid
 
 	atomic.AddInt64(&s.cacheHits, 1)
 	return streamURL, nil
+}
+
+// isM3U8URL checks if the given URL is an m3u8 playlist URL
+func (s *StreamingService) isM3U8URL(url string) bool {
+	lowerURL := strings.ToLower(url)
+	return strings.Contains(lowerURL, ".m3u8") || strings.HasSuffix(lowerURL, "/playlist.m3u8")
 }
 
 // GetMetrics returns streaming performance metrics
