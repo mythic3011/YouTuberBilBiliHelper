@@ -183,12 +183,15 @@ func (s *VideoService) extractStreamURL(ctx context.Context, videoURL, quality s
 		return "", fmt.Errorf("yt-dlp command failed: %w", err)
 	}
 
-	streamURL := strings.TrimSpace(string(output))
-	if streamURL == "" {
-		return "", fmt.Errorf("no stream URL found")
+	raw := strings.TrimSpace(string(output))
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			return line, nil
+		}
 	}
 
-	return streamURL, nil
+	return "", fmt.Errorf("no stream URL found")
 }
 
 // buildVideoURL constructs a video URL from platform and ID
