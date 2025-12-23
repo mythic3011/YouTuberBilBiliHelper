@@ -254,23 +254,23 @@ func (s *VideoService) detectPlatform(url string) string {
 func (s *VideoService) getFormatSelector(quality string) string {
 	switch strings.ToLower(quality) {
 	case "best", "":
-		return "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+		return "best[ext=mp4][acodec!=none]/best[acodec!=none]/best"
 	case "worst":
 		return "worstvideo+worstaudio/worst"
 	case "2160p", "4k":
-		return "bestvideo[height<=2160]+bestaudio/best[height<=2160]"
+		return "best[height<=2160][acodec!=none]/bestvideo[height<=2160]+bestaudio"
 	case "1440p":
-		return "bestvideo[height<=1440]+bestaudio/best[height<=1440]"
+		return "best[height<=1440][acodec!=none]/bestvideo[height<=1440]+bestaudio"
 	case "1080p", "hd":
-		return "bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+		return "best[height<=1080][acodec!=none]/bestvideo[height<=1080]+bestaudio"
 	case "720p":
-		return "bestvideo[height<=720]+bestaudio/best[height<=720]"
+		return "best[height<=720][acodec!=none]/bestvideo[height<=720]+bestaudio"
 	case "480p", "sd":
-		return "bestvideo[height<=480]+bestaudio/best[height<=480]"
+		return "best[height<=480][acodec!=none]/bestvideo[height<=480]+bestaudio"
 	case "360p":
-		return "bestvideo[height<=360]+bestaudio/best[height<=360]"
+		return "best[height<=360][acodec!=none]/bestvideo[height<=360]+bestaudio"
 	default:
-		return "bestvideo+bestaudio/best"
+		return "best[acodec!=none]/bestvideo+bestaudio"
 	}
 }
 

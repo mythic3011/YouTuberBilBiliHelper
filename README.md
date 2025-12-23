@@ -176,6 +176,14 @@ GET /api/v2/videos/:platform/:video_id
 curl http://localhost:8001/api/v2/videos/youtube/dQw4w9WgXcQ
 ```
 
+> **Tip:** If you don't know the platform ahead of time, send the full video URL in place of `:video_id`; the service will auto-detect the platform internally.
+
+**Example (auto-detect platform):**
+
+```bash
+curl "http://localhost:8001/api/v2/videos/auto/https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+```
+
 ### Stream Video (Proxy)
 
 ```bash
