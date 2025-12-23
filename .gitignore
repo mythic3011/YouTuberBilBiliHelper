@@ -51,7 +51,7 @@ logs/
 downloads/
 
 # Config secrets
-config/
+# (allow config directory itself to be tracked; ignore only explicit secret files as needed)
 
 # Local development
 .env

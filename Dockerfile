@@ -6,8 +6,8 @@ FROM golang:1.24-alpine AS builder
 WORKDIR /build
 
 # Force module-aware mode and skip GOPATH lookups
-ENV GO111MODULE=on
-ENV GOFLAGS=-mod=mod
+
+
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata

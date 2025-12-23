@@ -18,7 +18,7 @@ import (
 	"video-streaming-api/internal/services"
 )
 
-// Version is set via -ldflags during Docker builds; defaults to dev locally.
+// Version represents the application version, set via ldflags during build or defaults to "dev".
 var Version = "dev"
 
 // @title           Video Streaming API
