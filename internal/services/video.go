@@ -355,16 +355,15 @@ func (s *VideoService) IsPlaylist(ctx context.Context, platform, videoID string)
 func (s *VideoService) extractStreamURL(ctx context.Context, videoURL, quality string) (string, error) {
 	formatSelector := s.getFormatSelector(quality)
 
-	// Build command with additional flags for better compatibility
+	// Build command with enhanced quality flags
 	args := []string{
 		"--get-url",
 		"-f", formatSelector,
 		"--no-playlist",
 		"--no-check-certificates",
 		"--socket-timeout", "30",
-		"--js-runtimes", "node",
-		"--extractor-args", "youtube:player_client=ios,web",
-		"--extractor-args", "youtube:skip=dash,hls",
+		"--extractor-args", "youtube:player_client=ios,web,android",
+		"--prefer-free-formats",
 	}
 
 	args = append(args, videoURL)
@@ -472,23 +471,23 @@ func (s *VideoService) DetectPlatform(url string) string {
 func (s *VideoService) getFormatSelector(quality string) string {
 	switch strings.ToLower(quality) {
 	case "best", "", "auto", "highest":
-		return "best[ext=mp4][acodec!=none]/best[acodec!=none]/best"
+		return "bestvideo[vcodec^=vp9][height>=1080]+bestaudio[acodec=opus]/bestvideo[vcodec^=av01]+bestaudio[acodec=opus]/bestvideo[ext=mp4][height>=1080]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
 	case "worst":
 		return "worstvideo+worstaudio/worst"
 	case "2160p", "4k":
-		return "best[height<=2160][acodec!=none]/bestvideo[height<=2160]+bestaudio"
+		return "bestvideo[vcodec^=vp9][height<=2160]+bestaudio[acodec=opus]/bestvideo[vcodec^=av01][height<=2160]+bestaudio[acodec=opus]/bestvideo[ext=mp4][height<=2160]+bestaudio[ext=m4a]/bestvideo[height<=2160]+bestaudio/best[height<=2160]"
 	case "1440p":
-		return "best[height<=1440][acodec!=none]/bestvideo[height<=1440]+bestaudio"
+		return "bestvideo[vcodec^=vp9][height<=1440]+bestaudio[acodec=opus]/bestvideo[ext=mp4][height<=1440]+bestaudio[ext=m4a]/bestvideo[height<=1440]+bestaudio/best[height<=1440]"
 	case "1080p", "hd":
-		return "best[height<=1080][acodec!=none]/bestvideo[height<=1080]+bestaudio"
+		return "bestvideo[vcodec^=vp9][height<=1080]+bestaudio[acodec=opus]/bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]"
 	case "720p":
-		return "best[height<=720][acodec!=none]/bestvideo[height<=720]+bestaudio"
+		return "bestvideo[vcodec^=vp9][height<=720]+bestaudio[acodec=opus]/bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]"
 	case "480p", "sd":
-		return "best[height<=480][acodec!=none]/bestvideo[height<=480]+bestaudio"
+		return "bestvideo[ext=mp4][height<=480]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best[height<=480]"
 	case "360p":
-		return "best[height<=360][acodec!=none]/bestvideo[height<=360]+bestaudio"
+		return "bestvideo[ext=mp4][height<=360]+bestaudio[ext=m4a]/bestvideo[height<=360]+bestaudio/best[height<=360]"
 	default:
-		return "best[acodec!=none]/bestvideo+bestaudio"
+		return "bestvideo+bestaudio/best"
 	}
 }
 
