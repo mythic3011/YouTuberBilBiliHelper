@@ -70,7 +70,7 @@ func main() {
 	router := gin.New()
 
 	// Create handler
-	handler := api.NewHandler(videoService, streamingService, systemService, logger)
+	handler := api.NewHandler(videoService, streamingService, systemService, logger, cfg)
 
 	// Setup routes
 	api.SetupRoutes(router, handler, logger)

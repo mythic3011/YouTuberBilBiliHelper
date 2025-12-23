@@ -2,8 +2,10 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
+	"video-streaming-api/internal/config"
 	"video-streaming-api/internal/models"
 	"video-streaming-api/internal/services"
 
@@ -17,6 +19,7 @@ type Handler struct {
 	streaming *services.StreamingService
 	system    *services.SystemService
 	logger    *logrus.Logger
+	cfg       *config.Config
 }
 
 // NewHandler creates a new handler
@@ -25,12 +28,14 @@ func NewHandler(
 	streaming *services.StreamingService,
 	system *services.SystemService,
 	logger *logrus.Logger,
+	cfg *config.Config,
 ) *Handler {
 	return &Handler{
 		video:     video,
 		streaming: streaming,
 		system:    system,
 		logger:    logger,
+		cfg:       cfg,
 	}
 }
 
@@ -52,6 +57,7 @@ func (h *Handler) Root(c *gin.Context) {
 			"health":    "/api/v2/system/health",
 			"streaming": "/api/v2/stream/proxy/:platform/:video_id",
 			"direct":    "/api/v2/stream/direct/:platform/:video_id",
+			"smart":     "/api/v2/stream/smart/:platform/:video_id",
 			"info":      "/api/v2/videos/:platform/:video_id",
 		},
 		"supported_platforms": []string{"youtube", "bilibili", "twitter", "instagram", "twitch"},
@@ -158,53 +164,69 @@ func (h *Handler) GetPlaylistInfo(c *gin.Context) {
 	})
 }
 
-// StreamVideoProxy handles video streaming through proxy
-func (h *Handler) StreamVideoProxy(c *gin.Context) {
+// StreamVideo handles smart streaming decisions.
+// @Summary      Stream video (smart proxy/direct)
+// @Description  Automatically proxies traffic for configured countries (defaults to CN) while serving others via direct redirect; can be overridden via query parameters.
+// @Tags         stream
+// @Produce      json
+// @Param        platform  path      string  true  "Platform (youtube, bilibili, etc.)"
+// @Param        video_id  path      string  true  "Video ID or URL"
+// @Param        quality   query     string  false "Preferred quality"
+// @Param        mode      query     string  false "Force 'proxy' or 'direct'"
+// @Success      302       {string}  string  "Redirect or proxied stream"
+// @Failure      400       {object}  models.ErrorResponse
+// @Router       /api/v2/stream/{platform}/{video_id} [get]
+func (h *Handler) StreamVideo(c *gin.Context) {
 	platform := c.Param("platform")
 	videoID := c.Param("video_id")
 	quality := c.DefaultQuery("quality", "best")
+	mode := strings.ToLower(c.DefaultQuery("mode", ""))
 
 	if !h.video.ValidatePlatform(platform) {
 		h.errorResponse(c, http.StatusBadRequest, "Unsupported platform", platform)
 		return
 	}
 
-	h.logger.WithFields(logrus.Fields{
+	useProxy := h.cfg != nil && strings.EqualFold(h.cfg.DefaultStreamMode, "proxy")
+	if mode == "proxy" {
+		useProxy = true
+	} else if mode == "direct" {
+		useProxy = false
+	} else if h.cfg == nil || h.cfg.SmartProxyEnabled {
+		useProxy = h.shouldProxyRequest(c)
+	}
+
+	modeLabel := "direct"
+	if useProxy {
+		modeLabel = "proxy"
+	}
+	reqFields := logrus.Fields{
 		"platform": platform,
 		"video_id": videoID,
 		"quality":  quality,
-	}).Info("Streaming video request")
-
-	if err := h.streaming.StreamVideo(c, platform, videoID, quality); err != nil {
-		h.logger.WithError(err).Error("Failed to stream video")
-		if !c.Writer.Written() {
-			h.errorResponse(c, http.StatusInternalServerError, "Failed to stream video", err.Error())
-		}
+		"mode":     modeLabel,
+		"country":  strings.ToUpper(h.detectCountry(c)),
 	}
-}
 
-// GetDirectStreamURL handles direct stream URL requests
-func (h *Handler) GetDirectStreamURL(c *gin.Context) {
-	platform := c.Param("platform")
-	videoID := c.Param("video_id")
-	quality := c.DefaultQuery("quality", "best")
-
-	if !h.video.ValidatePlatform(platform) {
-		h.errorResponse(c, http.StatusBadRequest, "Unsupported platform", platform)
+	if useProxy {
+		h.logger.WithFields(reqFields).Info("Smart streaming via proxy")
+		if err := h.streaming.StreamVideo(c, platform, videoID, quality); err != nil {
+			h.logger.WithError(err).Error("Failed to stream video")
+			if !c.Writer.Written() {
+				h.errorResponse(c, http.StatusInternalServerError, "Failed to stream video", err.Error())
+			}
+		}
 		return
 	}
 
 	streamURL, err := h.streaming.GetDirectStreamURL(c.Request.Context(), platform, videoID, quality)
 	if err != nil {
-		h.logger.WithError(err).WithFields(logrus.Fields{
-			"platform": platform,
-			"video_id": videoID,
-		}).Error("Failed to get stream URL")
+		h.logger.WithError(err).WithFields(reqFields).Error("Failed to get stream URL")
 		h.errorResponse(c, http.StatusBadRequest, "Failed to get stream URL", err.Error())
 		return
 	}
 
-	// Redirect to stream URL
+	h.logger.WithFields(reqFields).Info("Smart streaming via direct redirect")
 	c.Redirect(http.StatusFound, streamURL)
 }
 
@@ -228,4 +250,33 @@ func (h *Handler) errorResponse(c *gin.Context, statusCode int, message, detail 
 		Code:      http.StatusText(statusCode),
 		Timestamp: time.Now(),
 	})
+}
+
+func (h *Handler) shouldProxyRequest(c *gin.Context) bool {
+	if h.cfg == nil {
+		return false
+	}
+	country := strings.ToUpper(h.detectCountry(c))
+	if country == "" {
+		return strings.EqualFold(h.cfg.DefaultStreamMode, "proxy")
+	}
+	for _, code := range h.cfg.ProxyCountries {
+		if strings.EqualFold(code, country) {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *Handler) detectCountry(c *gin.Context) string {
+	if override := strings.TrimSpace(c.DefaultQuery("country", "")); override != "" {
+		return strings.ToUpper(override)
+	}
+	headers := []string{"CF-IPCountry", "X-Country-Code", "X-Appengine-Country", "X-Geo-Country"}
+	for _, header := range headers {
+		if val := strings.TrimSpace(c.GetHeader(header)); val != "" && val != "ZZ" && val != "XX" {
+			return strings.ToUpper(val)
+		}
+	}
+	return ""
 }
