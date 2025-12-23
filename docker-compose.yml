@@ -11,7 +11,7 @@ services:
       - "8001:8001"
     environment:
       - PORT=8001
-      - ENVIRONMENT=production
+      - ENVIRONMENT=debug
       - LOG_LEVEL=info
       - REDIS_HOST=redis
       - REDIS_PORT=6379
