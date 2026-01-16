@@ -46,11 +46,24 @@ func main() {
 	logger := setupLogger(cfg)
 	logger.Info("Starting Go Video Streaming API...")
 
+	// Validate security configuration
+	if err := cfg.Security.Validate(); err != nil {
+		logger.WithError(err).Fatal("Security configuration validation failed")
+	}
+	logger.Info("Security configuration validated")
+
 	// Initialize services
 	redisService := services.NewRedisService(cfg, logger)
 	videoService := services.NewVideoService(redisService, cfg, logger)
 	streamingService := services.NewStreamingService(videoService, redisService, cfg, logger)
 	systemService := services.NewSystemService(redisService, cfg, logger)
+
+	// Initialize security components
+	securityComponents, err := initSecurityComponents(cfg, logger)
+	if err != nil {
+		logger.WithError(err).Fatal("Failed to initialize security components")
+	}
+	logger.Info("Security components initialized")
 
 	// Test Redis connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -72,8 +85,14 @@ func main() {
 	// Create handler
 	handler := api.NewHandler(videoService, streamingService, systemService, logger, cfg)
 
-	// Setup routes
-	api.SetupRoutes(router, handler, logger)
+	// Setup routes with security middleware
+	if securityComponents != nil {
+		api.SetupRoutesWithSecurity(router, handler, logger, securityComponents)
+		logger.Info("Routes configured with security middleware")
+	} else {
+		api.SetupRoutes(router, handler, logger)
+		logger.Info("Routes configured without security middleware")
+	}
 
 	// Start server
 	addr := fmt.Sprintf(":%s", cfg.Port)
@@ -84,7 +103,7 @@ func main() {
 
 	// Start server in goroutine
 	go func() {
-		if err := srv.ListenAndServe(); err != nil {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.WithError(err).Fatal("Server failed to start")
 		}
 	}()
@@ -104,12 +123,61 @@ func main() {
 		logger.WithError(err).Error("Server forced to shutdown")
 	}
 
+	// Close audit logger if initialized
+	if securityComponents != nil && securityComponents.AuditLogger != nil {
+		if fileLogger, ok := securityComponents.AuditLogger.(*services.FileAuditLogger); ok {
+			if err := fileLogger.Close(); err != nil {
+				logger.WithError(err).Error("Failed to close audit logger")
+			}
+		}
+	}
+
 	// Close Redis connection
 	if err := redisService.Close(); err != nil {
 		logger.WithError(err).Error("Failed to close Redis connection")
 	}
 
 	logger.Info("Server stopped")
+}
+
+// initSecurityComponents initializes all security-related components
+func initSecurityComponents(cfg *config.Config, logger *logrus.Logger) (*api.SecurityComponents, error) {
+	securityCfg := &cfg.Security
+
+	// Initialize audit logger
+	var auditLogger services.AuditLogger
+	if securityCfg.EnableAuditLog {
+		var err error
+		auditLogger, err = services.NewFileAuditLogger(securityCfg.AuditLogPath, logger, true)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize audit logger: %w", err)
+		}
+		logger.WithField("path", securityCfg.AuditLogPath).Info("Audit logger initialized")
+	}
+
+	// Initialize IP access controller
+	var ipController *api.CIDRAccessController
+	if securityCfg.EnableIPControl {
+		var err error
+		ipController, err = api.NewCIDRAccessController(securityCfg.IPAllowlist, securityCfg.IPBlocklist, true)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize IP access controller: %w", err)
+		}
+		logger.WithFields(logrus.Fields{
+			"allowlist_count": len(securityCfg.IPAllowlist),
+			"blocklist_count": len(securityCfg.IPBlocklist),
+		}).Info("IP access controller initialized")
+	}
+
+	// Initialize secure error handler
+	secureErrorHandler := api.NewSecureErrorHandler(logger, securityCfg.ExposeDetailedErrors)
+
+	return &api.SecurityComponents{
+		Config:             securityCfg,
+		AuditLogger:        auditLogger,
+		IPAccessController: ipController,
+		SecureErrorHandler: secureErrorHandler,
+	}, nil
 }
 
 func setupLogger(cfg *config.Config) *logrus.Logger {

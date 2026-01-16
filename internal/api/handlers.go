@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -15,11 +16,12 @@ import (
 
 // Handler holds all HTTP handlers
 type Handler struct {
-	video     *services.VideoService
-	streaming *services.StreamingService
-	system    *services.SystemService
-	logger    *logrus.Logger
-	cfg       *config.Config
+	video              *services.VideoService
+	streaming          *services.StreamingService
+	system             *services.SystemService
+	logger             *logrus.Logger
+	cfg                *config.Config
+	secureErrorHandler *SecureErrorHandler
 }
 
 // NewHandler creates a new handler
@@ -30,12 +32,19 @@ func NewHandler(
 	logger *logrus.Logger,
 	cfg *config.Config,
 ) *Handler {
+	// Determine if detailed errors should be exposed (development mode)
+	exposeDetailedErrors := false
+	if cfg != nil && cfg.Security.ExposeDetailedErrors {
+		exposeDetailedErrors = true
+	}
+
 	return &Handler{
-		video:     video,
-		streaming: streaming,
-		system:    system,
-		logger:    logger,
-		cfg:       cfg,
+		video:              video,
+		streaming:          streaming,
+		system:             system,
+		logger:             logger,
+		cfg:                cfg,
+		secureErrorHandler: NewSecureErrorHandler(logger, exposeDetailedErrors),
 	}
 }
 
@@ -262,8 +271,21 @@ func (h *Handler) GetStreamMetrics(c *gin.Context) {
 	})
 }
 
-// errorResponse sends a standardized error response
+// errorResponse sends a standardized error response using secure error handling
 func (h *Handler) errorResponse(c *gin.Context, statusCode int, message, detail string) {
+	if h.secureErrorHandler != nil {
+		// Use secure error handler - it will log details internally and send generic message
+		var err error
+		if detail != "" {
+			err = fmt.Errorf("%s: %s", message, detail)
+		} else {
+			err = fmt.Errorf("%s", message)
+		}
+		h.secureErrorHandler.SecureErrorResponseWithMessage(c, statusCode, message, err, "handler_error")
+		return
+	}
+
+	// Fallback to basic error response if secure handler not initialized
 	c.JSON(statusCode, models.ErrorResponse{
 		Success:   false,
 		Error:     message,
