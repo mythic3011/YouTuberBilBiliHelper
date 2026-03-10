@@ -15,15 +15,35 @@ services:
       - LOG_LEVEL=info
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-your_secure_redis_password_here}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
       - REDIS_DB=0
       - CACHE_TTL=300
       - VIDEO_INFO_TTL=3600
       - STREAM_URL_TTL=600
-      - RATE_LIMIT_ENABLED=true
-      - RATE_LIMIT_MAX_REQUESTS=1000
-      - RATE_LIMIT_WINDOW=60
-      - TZ=UTC
+      # Rate Limiting
+      - RATE_LIMIT_ENABLED=${RATE_LIMIT_ENABLED:-true}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
+      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW:-60}
+      - RATE_LIMIT_BY_IP=${RATE_LIMIT_BY_IP:-true}
+      # API Key Authentication
+      - API_KEY_ENABLED=${API_KEY_ENABLED:-false}
+      - API_KEYS=${API_KEYS:-}
+      - API_KEY_HEADER=${API_KEY_HEADER:-X-API-Key}
+      - API_KEY_EXEMPT_IPS=${API_KEY_EXEMPT_IPS:-127.0.0.1,::1}
+      # CORS Configuration
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+      - CORS_ALLOWED_METHODS=${CORS_ALLOWED_METHODS:-GET,POST,PUT,DELETE,OPTIONS}
+      - CORS_ALLOWED_HEADERS=${CORS_ALLOWED_HEADERS:-Content-Type,Authorization,X-API-Key,X-Requested-With}
+      - CORS_ALLOW_CREDENTIALS=${CORS_ALLOW_CREDENTIALS:-false}
+      - CORS_MAX_AGE=${CORS_MAX_AGE:-86400}
+      # IP Access Control
+      - ENABLE_IP_CONTROL=${ENABLE_IP_CONTROL:-false}
+      - IP_ALLOWLIST=${IP_ALLOWLIST:-}
+      - IP_BLOCKLIST=${IP_BLOCKLIST:-}
+      # Security Headers
+      - ENABLE_HSTS=${ENABLE_HSTS:-true}
+      - CSP_DIRECTIVES=${CSP_DIRECTIVES:-default-src 'self'}
+      - TZ=Aisa/Hong_Kong
     volumes:
       - ./downloads:/app/downloads
       - ./logs:/app/logs
@@ -45,14 +65,14 @@ services:
     image: redis:7-alpine
     container_name: video-api-redis
     ports:
-      - "127.0.0.1:6379:6379" # Only bind to localhost
+      - "127.0.0.1:6379:6379"
     environment:
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-your_secure_redis_password_here}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
     command: >
       redis-server
-      --requirepass ${REDIS_PASSWORD:-your_secure_redis_password_here}
+      --requirepass ${REDIS_PASSWORD}
       --appendonly yes
       --appendfsync everysec
       --maxmemory 256mb
@@ -67,14 +87,7 @@ services:
     networks:
       - video-api-network
     healthcheck:
-      test:
-        [
-          "CMD",
-          "redis-cli",
-          "-a",
-          "${REDIS_PASSWORD:-your_secure_redis_password_here}",
-          "ping",
-        ]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 3s
       retries: 3

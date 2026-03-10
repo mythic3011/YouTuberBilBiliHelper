@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"runtime/debug"
+	"strings"
+	"sync"
 	"time"
 
 	"video-streaming-api/internal/config"
@@ -55,7 +57,7 @@ func LoggerMiddleware(logger *logrus.Logger) gin.HandlerFunc {
 	}
 }
 
-// CORSMiddleware handles CORS
+// CORSMiddleware handles CORS - legacy version (allows all origins)
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
@@ -65,6 +67,74 @@ func CORSMiddleware() gin.HandlerFunc {
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// ConfigurableCORSMiddleware handles CORS with configurable origins
+func ConfigurableCORSMiddleware(cfg *config.SecurityConfig) gin.HandlerFunc {
+	// Pre-compute allowed origins map for O(1) lookup
+	allowedOriginsMap := make(map[string]bool)
+	for _, origin := range cfg.CORSAllowedOrigins {
+		allowedOriginsMap[strings.ToLower(origin)] = true
+	}
+
+	return func(c *gin.Context) {
+		origin := c.Request.Header.Get("Origin")
+
+		// Determine if origin is allowed
+		var allowedOrigin string
+		if len(cfg.CORSAllowedOrigins) == 0 {
+			// No specific origins configured - allow all (but no credentials)
+			allowedOrigin = "*"
+		} else if origin != "" {
+			// Check if origin is in allowed list
+			if allowedOriginsMap[strings.ToLower(origin)] {
+				allowedOrigin = origin
+			}
+		}
+
+		if allowedOrigin != "" {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+
+			// Only set credentials header if specific origins are configured
+			if cfg.CORSAllowCredentials && allowedOrigin != "*" {
+				c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+			}
+
+			// Set allowed methods
+			if len(cfg.CORSAllowedMethods) > 0 {
+				c.Writer.Header().Set("Access-Control-Allow-Methods", strings.Join(cfg.CORSAllowedMethods, ", "))
+			} else {
+				c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			}
+
+			// Set allowed headers
+			if len(cfg.CORSAllowedHeaders) > 0 {
+				c.Writer.Header().Set("Access-Control-Allow-Headers", strings.Join(cfg.CORSAllowedHeaders, ", "))
+			} else {
+				c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, X-Requested-With")
+			}
+
+			// Set max age for preflight cache
+			if cfg.CORSMaxAge > 0 {
+				c.Writer.Header().Set("Access-Control-Max-Age", fmt.Sprintf("%d", cfg.CORSMaxAge))
+			}
+
+			// Vary header for proper caching
+			c.Writer.Header().Add("Vary", "Origin")
+		}
+
+		// Handle preflight requests
+		if c.Request.Method == "OPTIONS" {
+			if allowedOrigin != "" {
+				c.AbortWithStatus(http.StatusNoContent)
+			} else {
+				c.AbortWithStatus(http.StatusForbidden)
+			}
 			return
 		}
 
@@ -574,6 +644,241 @@ func IPAccessControlMiddleware(controller *CIDRAccessController, logger *logrus.
 				Error:     "Forbidden",
 				Detail:    "Access denied",
 				Code:      "IP_NOT_ALLOWED",
+				Timestamp: time.Now(),
+			})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// RateLimiter implements a sliding window rate limiter
+type RateLimiter struct {
+	requests    map[string][]time.Time
+	mu          sync.RWMutex
+	maxRequests int
+	window      time.Duration
+	cleanupTick *time.Ticker
+	stopCleanup chan struct{}
+}
+
+// NewRateLimiter creates a new rate limiter
+func NewRateLimiter(maxRequests int, windowSecs int) *RateLimiter {
+	rl := &RateLimiter{
+		requests:    make(map[string][]time.Time),
+		maxRequests: maxRequests,
+		window:      time.Duration(windowSecs) * time.Second,
+		cleanupTick: time.NewTicker(time.Minute),
+		stopCleanup: make(chan struct{}),
+	}
+
+	// Start background cleanup goroutine
+	go rl.cleanup()
+
+	return rl
+}
+
+// cleanup removes expired entries periodically
+func (rl *RateLimiter) cleanup() {
+	for {
+		select {
+		case <-rl.cleanupTick.C:
+			rl.mu.Lock()
+			now := time.Now()
+			for key, times := range rl.requests {
+				// Filter out expired timestamps
+				valid := make([]time.Time, 0)
+				for _, t := range times {
+					if now.Sub(t) < rl.window {
+						valid = append(valid, t)
+					}
+				}
+				if len(valid) == 0 {
+					delete(rl.requests, key)
+				} else {
+					rl.requests[key] = valid
+				}
+			}
+			rl.mu.Unlock()
+		case <-rl.stopCleanup:
+			rl.cleanupTick.Stop()
+			return
+		}
+	}
+}
+
+// Stop stops the rate limiter cleanup goroutine
+func (rl *RateLimiter) Stop() {
+	close(rl.stopCleanup)
+}
+
+// Allow checks if a request is allowed for the given key
+func (rl *RateLimiter) Allow(key string) (bool, int, time.Duration) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	windowStart := now.Add(-rl.window)
+
+	// Get existing requests for this key
+	times, exists := rl.requests[key]
+	if !exists {
+		times = make([]time.Time, 0)
+	}
+
+	// Filter to only requests within the window
+	valid := make([]time.Time, 0, len(times))
+	for _, t := range times {
+		if t.After(windowStart) {
+			valid = append(valid, t)
+		}
+	}
+
+	remaining := rl.maxRequests - len(valid)
+	if remaining <= 0 {
+		// Calculate retry-after time
+		if len(valid) > 0 {
+			oldestInWindow := valid[0]
+			retryAfter := oldestInWindow.Add(rl.window).Sub(now)
+			return false, 0, retryAfter
+		}
+		return false, 0, rl.window
+	}
+
+	// Add current request
+	valid = append(valid, now)
+	rl.requests[key] = valid
+
+	return true, remaining - 1, 0
+}
+
+// RateLimitMiddleware implements rate limiting per IP or globally
+func RateLimitMiddleware(cfg *config.SecurityConfig, logger *logrus.Logger) gin.HandlerFunc {
+	if !cfg.RateLimitEnabled {
+		return func(c *gin.Context) {
+			c.Next()
+		}
+	}
+
+	limiter := NewRateLimiter(cfg.RateLimitMaxRequests, cfg.RateLimitWindowSecs)
+
+	return func(c *gin.Context) {
+		var key string
+		if cfg.RateLimitByIP {
+			// Get client IP
+			key = GetClientIP(c.Request.Header, c.Request.RemoteAddr)
+			if key == "" {
+				key = c.ClientIP()
+			}
+		} else {
+			key = "global"
+		}
+
+		allowed, remaining, retryAfter := limiter.Allow(key)
+
+		// Set rate limit headers
+		c.Writer.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", cfg.RateLimitMaxRequests))
+		c.Writer.Header().Set("X-RateLimit-Remaining", fmt.Sprintf("%d", remaining))
+		c.Writer.Header().Set("X-RateLimit-Window", fmt.Sprintf("%d", cfg.RateLimitWindowSecs))
+
+		if !allowed {
+			logger.WithFields(logrus.Fields{
+				"client_ip":   key,
+				"path":        c.Request.URL.Path,
+				"retry_after": retryAfter.Seconds(),
+			}).Warn("Rate limit exceeded")
+
+			c.Writer.Header().Set("Retry-After", fmt.Sprintf("%d", int(retryAfter.Seconds())+1))
+			c.Writer.Header().Set("X-RateLimit-Remaining", "0")
+
+			c.JSON(http.StatusTooManyRequests, models.ErrorResponse{
+				Success:   false,
+				Error:     "Too Many Requests",
+				Detail:    fmt.Sprintf("Rate limit exceeded. Try again in %d seconds", int(retryAfter.Seconds())+1),
+				Code:      "RATE_LIMIT_EXCEEDED",
+				Timestamp: time.Now(),
+			})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// APIKeyAuthMiddleware validates API key authentication
+func APIKeyAuthMiddleware(cfg *config.SecurityConfig, logger *logrus.Logger) gin.HandlerFunc {
+	if !cfg.APIKeyEnabled {
+		return func(c *gin.Context) {
+			c.Next()
+		}
+	}
+
+	// Pre-compute valid API keys map for O(1) lookup
+	validKeys := make(map[string]bool)
+	for _, key := range cfg.APIKeys {
+		validKeys[key] = true
+	}
+
+	// Pre-compute exempt IPs
+	exemptIPs := make(map[string]bool)
+	for _, ip := range cfg.APIKeyExemptIPs {
+		exemptIPs[strings.ToUpper(ip)] = true
+	}
+
+	return func(c *gin.Context) {
+		// Check if client IP is exempt
+		clientIP := GetClientIP(c.Request.Header, c.Request.RemoteAddr)
+		if clientIP == "" {
+			clientIP = c.ClientIP()
+		}
+
+		if exemptIPs[strings.ToUpper(clientIP)] {
+			c.Next()
+			return
+		}
+
+		// Get API key from header
+		apiKey := c.Request.Header.Get(cfg.APIKeyHeader)
+
+		// Also check Authorization header with Bearer prefix
+		if apiKey == "" {
+			authHeader := c.Request.Header.Get("Authorization")
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				apiKey = strings.TrimPrefix(authHeader, "Bearer ")
+			}
+		}
+
+		if apiKey == "" {
+			logger.WithFields(logrus.Fields{
+				"client_ip": clientIP,
+				"path":      c.Request.URL.Path,
+			}).Warn("API key missing")
+
+			c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+				Success:   false,
+				Error:     "Unauthorized",
+				Detail:    "API key is required",
+				Code:      "API_KEY_MISSING",
+				Timestamp: time.Now(),
+			})
+			c.Abort()
+			return
+		}
+
+		if !validKeys[apiKey] {
+			logger.WithFields(logrus.Fields{
+				"client_ip": clientIP,
+				"path":      c.Request.URL.Path,
+			}).Warn("Invalid API key")
+
+			c.JSON(http.StatusUnauthorized, models.ErrorResponse{
+				Success:   false,
+				Error:     "Unauthorized",
+				Detail:    "Invalid API key",
+				Code:      "API_KEY_INVALID",
 				Timestamp: time.Now(),
 			})
 			c.Abort()

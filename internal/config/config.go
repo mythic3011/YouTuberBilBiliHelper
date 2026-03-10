@@ -58,6 +58,25 @@ type SecurityConfig struct {
 
 	// Error Handling
 	ExposeDetailedErrors bool
+
+	// CORS Configuration
+	CORSAllowedOrigins   []string
+	CORSAllowedMethods   []string
+	CORSAllowedHeaders   []string
+	CORSAllowCredentials bool
+	CORSMaxAge           int
+
+	// Rate Limiting
+	RateLimitEnabled     bool
+	RateLimitMaxRequests int
+	RateLimitWindowSecs  int
+	RateLimitByIP        bool
+
+	// API Key Authentication
+	APIKeyEnabled   bool
+	APIKeys         []string
+	APIKeyHeader    string
+	APIKeyExemptIPs []string
 }
 
 // Load reads configuration values from environment variables with sensible defaults.
@@ -114,6 +133,25 @@ func loadSecurityConfig() SecurityConfig {
 
 		// Error Handling
 		ExposeDetailedErrors: parseBool(getEnv("EXPOSE_DETAILED_ERRORS", "false"), false),
+
+		// CORS Configuration
+		CORSAllowedOrigins:   parseCSVPreserveCase(getEnv("CORS_ALLOWED_ORIGINS", "")),
+		CORSAllowedMethods:   parseCSV(getEnv("CORS_ALLOWED_METHODS", "GET,POST,PUT,DELETE,OPTIONS")),
+		CORSAllowedHeaders:   parseCSVPreserveCase(getEnv("CORS_ALLOWED_HEADERS", "Content-Type,Authorization,X-API-Key,X-Requested-With")),
+		CORSAllowCredentials: parseBool(getEnv("CORS_ALLOW_CREDENTIALS", "false"), false),
+		CORSMaxAge:           parseInt(getEnv("CORS_MAX_AGE", "86400"), 86400), // 24 hours
+
+		// Rate Limiting
+		RateLimitEnabled:     parseBool(getEnv("RATE_LIMIT_ENABLED", "true"), true),
+		RateLimitMaxRequests: parseInt(getEnv("RATE_LIMIT_MAX_REQUESTS", "100"), 100),
+		RateLimitWindowSecs:  parseInt(getEnv("RATE_LIMIT_WINDOW", "60"), 60),
+		RateLimitByIP:        parseBool(getEnv("RATE_LIMIT_BY_IP", "true"), true),
+
+		// API Key Authentication
+		APIKeyEnabled:   parseBool(getEnv("API_KEY_ENABLED", "false"), false),
+		APIKeys:         parseCSVPreserveCase(getEnv("API_KEYS", "")),
+		APIKeyHeader:    getEnv("API_KEY_HEADER", "X-API-Key"),
+		APIKeyExemptIPs: parseCSV(getEnv("API_KEY_EXEMPT_IPS", "127.0.0.1,::1")),
 	}
 }
 
@@ -187,6 +225,21 @@ func parseCSVLower(raw string) []string {
 	return result
 }
 
+func parseCSVPreserveCase(raw string) []string {
+	if raw == "" {
+		return []string{}
+	}
+	parts := strings.Split(raw, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trim := strings.TrimSpace(part)
+		if trim != "" {
+			result = append(result, trim)
+		}
+	}
+	return result
+}
+
 func parseInt64(raw string, fallback int64) int64 {
 	if v, err := strconv.ParseInt(raw, 10, 64); err == nil {
 		return v
@@ -255,6 +308,31 @@ func (c *SecurityConfig) Validate() error {
 	// Validate referrer policy is not empty
 	if c.ReferrerPolicy == "" {
 		errors = append(errors, "REFERRER_POLICY must not be empty")
+	}
+
+	// Validate rate limiting configuration
+	if c.RateLimitEnabled {
+		if c.RateLimitMaxRequests <= 0 {
+			errors = append(errors, "RATE_LIMIT_MAX_REQUESTS must be positive when rate limiting is enabled")
+		}
+		if c.RateLimitWindowSecs <= 0 {
+			errors = append(errors, "RATE_LIMIT_WINDOW must be positive when rate limiting is enabled")
+		}
+	}
+
+	// Validate API key configuration
+	if c.APIKeyEnabled {
+		if len(c.APIKeys) == 0 {
+			errors = append(errors, "API_KEYS must not be empty when API key authentication is enabled")
+		}
+		if c.APIKeyHeader == "" {
+			errors = append(errors, "API_KEY_HEADER must not be empty when API key authentication is enabled")
+		}
+	}
+
+	// Validate CORS configuration - credentials require specific origins
+	if c.CORSAllowCredentials && len(c.CORSAllowedOrigins) == 0 {
+		errors = append(errors, "CORS_ALLOWED_ORIGINS must be specified when CORS_ALLOW_CREDENTIALS is true (cannot use wildcard with credentials)")
 	}
 
 	if len(errors) > 0 {

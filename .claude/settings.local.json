@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build -o /dev/null ./...)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -30,34 +30,40 @@ func SetupRoutes(router *gin.Engine, handler *Handler, logger *logrus.Logger) {
 }
 
 // SetupRoutesWithSecurity configures all API routes with full security middleware stack
-// Middleware order: IP Access → Size Limits → Validation → Sanitization → Security Headers
+// Middleware order: IP Access → Rate Limit → API Key Auth → Size Limits → Validation → Sanitization → Security Headers
 func SetupRoutesWithSecurity(router *gin.Engine, handler *Handler, logger *logrus.Logger, security *SecurityComponents) {
 	// 1. IP Access Control Middleware (earliest - blocks before processing)
 	if security.IPAccessController != nil && security.Config.EnableIPControl {
 		router.Use(IPAccessControlMiddleware(security.IPAccessController, logger))
 	}
 
-	// 2. Request Size Limit Middleware
+	// 2. Rate Limiting Middleware
+	router.Use(RateLimitMiddleware(security.Config, logger))
+
+	// 3. API Key Authentication Middleware
+	router.Use(APIKeyAuthMiddleware(security.Config, logger))
+
+	// 4. Request Size Limit Middleware
 	router.Use(RequestSizeLimitMiddleware(security.Config, logger))
 
-	// 3. Input Validation Middleware
+	// 5. Input Validation Middleware
 	validator := NewDefaultInputValidator(security.Config)
 	router.Use(ValidationMiddleware(validator, logger))
 
-	// 4. Input Sanitization Middleware
+	// 6. Input Sanitization Middleware
 	sanitizer := NewDefaultInputSanitizer()
 	router.Use(SanitizationMiddleware(sanitizer, logger))
 
-	// 5. Enhanced Security Headers Middleware
+	// 7. Enhanced Security Headers Middleware
 	router.Use(EnhancedSecurityHeadersMiddleware(security.Config))
 
-	// 6. Logging Middleware
+	// 8. Logging Middleware
 	router.Use(LoggerMiddleware(logger))
 
-	// 7. CORS Middleware
-	router.Use(CORSMiddleware())
+	// 9. Configurable CORS Middleware
+	router.Use(ConfigurableCORSMiddleware(security.Config))
 
-	// 8. Recovery Middleware with audit logging
+	// 10. Recovery Middleware with audit logging
 	if security.SecureErrorHandler != nil {
 		router.Use(SecureRecoveryMiddleware(security.SecureErrorHandler))
 	} else if security.AuditLogger != nil {

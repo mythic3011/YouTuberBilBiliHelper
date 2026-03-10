@@ -79,3 +79,4 @@ dump.rdb
 
 # Docker
 .docker/
+.agent/*
