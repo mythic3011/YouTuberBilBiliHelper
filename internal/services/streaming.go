@@ -76,29 +76,18 @@ func (s *StreamingService) StreamVideo(c *gin.Context, platform, videoID, qualit
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Copy headers from original request
-	for key, values := range c.Request.Header {
-		for _, value := range values {
-			req.Header.Add(key, value)
-		}
-	}
+	// Never forward caller credentials, cookies, or API keys to video CDNs.
+	copySafeStreamRequestHeaders(req.Header, c.Request.Header)
 
-	// Execute request
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-	resp, err := client.Do(req)
+	// Enforce public IPs at connection time (including redirects and DNS changes).
+	resp, err := safeStreamHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to fetch stream: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Copy response headers
-	for key, values := range resp.Header {
-		for _, value := range values {
-			c.Header(key, value)
-		}
-	}
+	// Propagate media metadata, not upstream cookies or hop-by-hop headers.
+	copySafeStreamResponseHeaders(c.Writer.Header(), resp.Header)
 
 	// Set additional headers
 	c.Header("X-Proxy-Server", "Go-Streaming-API")

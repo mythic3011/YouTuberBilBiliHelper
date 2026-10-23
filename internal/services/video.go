@@ -134,8 +134,9 @@ func (s *VideoService) extractVideoInfo(ctx context.Context, videoURL string) (*
 	args := []string{
 		"--dump-json",
 		"--no-playlist",
-		"--no-check-certificates",
+		"--ignore-config",
 		"--socket-timeout", "30",
+		"--",
 		videoURL,
 	}
 
@@ -219,8 +220,9 @@ func (s *VideoService) extractPlaylistInfo(ctx context.Context, playlistURL stri
 	args := []string{
 		"--dump-single-json",
 		"--flat-playlist",
-		"--no-check-certificates",
+		"--ignore-config",
 		"--socket-timeout", "30",
+		"--",
 		playlistURL,
 	}
 
@@ -298,8 +300,9 @@ func (s *VideoService) IsPlaylist(ctx context.Context, platform, videoID string)
 
 	args := []string{
 		"--dump-json",
-		"--no-check-certificates",
+		"--ignore-config",
 		"--socket-timeout", "30",
+		"--",
 		videoURL,
 	}
 
@@ -360,13 +363,13 @@ func (s *VideoService) extractStreamURL(ctx context.Context, videoURL, quality s
 		"--get-url",
 		"-f", formatSelector,
 		"--no-playlist",
-		"--no-check-certificates",
+		"--ignore-config",
 		"--socket-timeout", "30",
 		"--extractor-args", "youtube:player_client=ios,web,android",
 		"--prefer-free-formats",
 	}
 
-	args = append(args, videoURL)
+	args = append(args, "--", videoURL)
 
 	s.logger.WithFields(logrus.Fields{
 		"video_url": videoURL,
@@ -406,22 +409,18 @@ func (s *VideoService) extractStreamURL(ctx context.Context, videoURL, quality s
 	return sanitizeStreamURL(outputStr)
 }
 
-// sanitizeStreamURL strips whitespace and multi-line entries, returning the first valid URL.
+// sanitizeStreamURL ignores yt-dlp warnings and accepts only public HTTP(S) URLs.
 func sanitizeStreamURL(raw string) (string, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return "", fmt.Errorf("no stream URL found")
-	}
-
-	for _, line := range strings.Split(trimmed, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
+	for _, line := range strings.Split(raw, "\n") {
+		candidate := strings.TrimSpace(line)
+		if candidate == "" {
 			continue
 		}
-		return line, nil
+		if err := validateStreamURL(candidate); err == nil {
+			return candidate, nil
+		}
 	}
-
-	return "", fmt.Errorf("no stream URL found")
+	return "", fmt.Errorf("yt-dlp returned no valid public HTTP(S) stream URL")
 }
 
 // buildVideoURL constructs a video URL from platform and ID
