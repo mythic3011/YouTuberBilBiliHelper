@@ -290,7 +290,7 @@ func ValidationMiddleware(validator InputValidator, logger *logrus.Logger) gin.H
 		}
 
 		// Extract and validate video_id parameter (path param)
-		videoID := c.Param("video_id")
+		videoID := strings.TrimPrefix(c.Param("video_id"), "/")
 		if videoID != "" {
 			if err := validator.ValidateVideoID(videoID); err != nil {
 				if ve, ok := err.(*ValidationError); ok {
