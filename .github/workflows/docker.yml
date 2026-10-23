@@ -47,7 +47,7 @@ jobs:
             type=sha
 
       - name: Build and push Go API
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
@@ -68,7 +68,15 @@ jobs:
 
       - name: Test Go API Docker image
         run: |
-          docker-compose up -d
-          sleep 5
-          curl -f http://localhost:8001/health || exit 1
-          docker-compose down
+          set -eu
+          trap 'docker compose down -v' EXIT
+          docker compose up -d --build
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8001/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose ps
+          docker compose logs
+          exit 1
