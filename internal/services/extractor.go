@@ -60,7 +60,8 @@ func (s *VideoService) runYtDLP(ctx context.Context, args []string) ([]byte, err
 		return nil, errors.New("yt-dlp output exceeds 24 MiB limit")
 	}
 	if err != nil {
-		return nil, fmt.Errorf("yt-dlp failed: %w (%s)", err, stderr.String())
+		// stderr may contain signed URLs and tokens; never return it to callers.
+		return nil, fmt.Errorf("yt-dlp failed: %w", err)
 	}
 	return stdout.Bytes(), nil
 }

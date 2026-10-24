@@ -62,7 +62,6 @@ func (s *StreamingService) StreamVideo(c *gin.Context, platform, videoID, qualit
 			"platform":     platform,
 			"video_id":     videoID,
 			"quality":      quality,
-			"stream_url":   streamURL,
 			"is_playlist":  isPlaylist,
 		}).Warn("m3u8 format detected for non-playlist content")
 		return fmt.Errorf("m3u8 format not supported for non-playlist content")

@@ -125,43 +125,11 @@ func (c *CIDRAccessController) IsEnabled() bool {
 	return c.enabled
 }
 
-// GetClientIP extracts the real client IP from request headers.
-// Checks X-Forwarded-For, X-Real-IP, CF-Connecting-IP in order.
-func GetClientIP(headers map[string][]string, remoteAddr string) string {
-	// Check CF-Connecting-IP (Cloudflare)
-	if cfIP := getHeader(headers, "CF-Connecting-IP"); cfIP != "" {
-		return cfIP
-	}
-
-	// Check X-Real-IP
-	if realIP := getHeader(headers, "X-Real-IP"); realIP != "" {
-		return realIP
-	}
-
-	// Check X-Forwarded-For (take first IP)
-	if xff := getHeader(headers, "X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		if len(parts) > 0 {
-			return strings.TrimSpace(parts[0])
-		}
-	}
-
-	// Fall back to remote address
-	if remoteAddr != "" {
-		// Remove port if present
-		host, _, err := net.SplitHostPort(remoteAddr)
-		if err != nil {
-			return remoteAddr
-		}
-		return host
-	}
-
-	return ""
-}
-
-func getHeader(headers map[string][]string, key string) string {
-	if values, ok := headers[key]; ok && len(values) > 0 {
-		return strings.TrimSpace(values[0])
-	}
-	return ""
+// GetClientIP uses the socket peer rather than caller-controlled forwarding headers.
+// Forwarded client IPs require an explicitly configured trusted ingress.
+func GetClientIP(_ map[string][]string, remoteAddr string) string {
+	if remoteAddr == "" { return "" }
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err == nil { return host }
+	return remoteAddr
 }

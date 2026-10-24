@@ -31,7 +31,6 @@ func LoggerMiddleware(logger *logrus.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		path := c.Request.URL.Path
-		query := c.Request.URL.RawQuery
 
 		// Process request
 		c.Next()
@@ -42,7 +41,6 @@ func LoggerMiddleware(logger *logrus.Logger) gin.HandlerFunc {
 		clientIP := c.ClientIP()
 		method := c.Request.Method
 		userAgent := c.Request.UserAgent()
-		referer := c.Request.Referer()
 
 		logger.WithFields(logrus.Fields{
 			"status_code": statusCode,
@@ -50,9 +48,7 @@ func LoggerMiddleware(logger *logrus.Logger) gin.HandlerFunc {
 			"client_ip":   clientIP,
 			"method":      method,
 			"path":        path,
-			"query":       query,
 			"user_agent":  userAgent,
-			"referer":     referer,
 		}).Info("HTTP request")
 	}
 }
