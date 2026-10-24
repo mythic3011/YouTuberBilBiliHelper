@@ -33,9 +33,10 @@ services:
       ENABLE_HSTS: ${ENABLE_HSTS:-true}
       TZ: ${TZ:-Asia/Hong_Kong}
     volumes:
-      - ./downloads:/app/downloads
-      - ./logs:/app/logs
-      - ./config:/app/config
+      # Managed volumes avoid root-owned host bind mount failures for UID 1000.
+      - api_downloads:/app/downloads
+      - api_logs:/app/logs
+      - ./config:/app/config:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -75,6 +76,8 @@ services:
 
 volumes:
   redis_data:
+  api_downloads:
+  api_logs:
 
 networks:
   video-api-network:
