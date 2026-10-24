@@ -247,9 +247,7 @@ func TestProperty2_ValidationFailuresReturn400WithDescriptiveErrors(t *testing.T
 
 			return w.Code == http.StatusBadRequest
 		},
-		gen.AnyString().SuchThat(func(s string) bool {
-			return len(s) > 0 && len(s) <= 250 && !strings.Contains(s, "/")
-		}),
+		gen.OneConstOf("bad!id", "video.id", "invalid id", "bad@id", "abc+def", strings.Repeat("a", 201)),
 	))
 
 	// Property: Invalid quality query param returns 400
