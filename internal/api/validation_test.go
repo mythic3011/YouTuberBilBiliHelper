@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"video-streaming-api/internal/config"
@@ -241,7 +242,7 @@ func TestProperty2_ValidationFailuresReturn400WithDescriptiveErrors(t *testing.T
 				c.JSON(200, gin.H{"success": true})
 			})
 
-			req := httptest.NewRequest("GET", "/test/youtube/"+videoID, nil)
+			req := httptest.NewRequest("GET", "/test/youtube/"+url.PathEscape(videoID), nil)
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 
