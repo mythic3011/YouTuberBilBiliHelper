@@ -1,6 +1,6 @@
 # 🚀 Video Streaming API (Go)
 
-High-performance video streaming API built with Go, delivering exceptional performance for video content management across multiple platforms.
+Go + Gin video metadata and streaming API using yt-dlp and Redis.
 
 ## Runtime notes
 
@@ -60,10 +60,10 @@ curl http://localhost:8001/health
 go mod download
 
 # Run Redis
-docker run -d -p 6379:6379 redis:alpine
+docker run -d -p 127.0.0.1:6379:6379 redis:7-alpine
 
 # Run the API
-go run main.go
+go run .
 
 # Or build and run
 go build -o video-api
@@ -191,7 +191,7 @@ Automatically routes traffic through proxy for configured countries (default: CN
 
 **Query Parameters:**
 
-- `quality`: Video quality (best, auto, highest, 1080p, 720p, 480p, 360p)
+- `quality`: Video quality (best, worst, 2160p, 1440p, 1080p, 720p, 480p, 360p)
 - `mode`: Force routing mode (proxy, direct, or omit for smart detection)
 - `country`: Override detected country for testing (e.g., `country=CN`)
 
@@ -251,7 +251,7 @@ GET /api/v2/stream/metrics
 ## 🎯 Supported Platforms
 
 - **YouTube** (youtube.com, youtu.be)
-- **Bilibili** (bilibili.com, b23.tv)
+- **Bilibili** (bilibili.com; Bilibili video IDs, not b23.tv shortlinks)
 - **Twitter/X** (twitter.com, x.com)
 - **Instagram** (instagram.com)
 - **Twitch** (twitch.tv)
