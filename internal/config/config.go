@@ -151,7 +151,7 @@ func loadSecurityConfig() SecurityConfig {
 		APIKeyEnabled:   parseBool(getEnv("API_KEY_ENABLED", "false"), false),
 		APIKeys:         parseCSVPreserveCase(getEnv("API_KEYS", "")),
 		APIKeyHeader:    getEnv("API_KEY_HEADER", "X-API-Key"),
-		APIKeyExemptIPs: parseCSV(getEnv("API_KEY_EXEMPT_IPS", "127.0.0.1,::1")),
+		APIKeyExemptIPs: parseCSV(getEnv("API_KEY_EXEMPT_IPS", "")),
 	}
 }
 

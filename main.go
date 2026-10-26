@@ -209,8 +209,12 @@ func setupServer(addr string, handler *gin.Engine) *http.Server {
 	return &http.Server{
 		Addr:           addr,
 		Handler:        handler,
-		ReadTimeout:    30 * time.Second,
-		WriteTimeout:   30 * time.Second,
-		MaxHeaderBytes: 1 << 20, // 1 MB
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		// A fixed WriteTimeout cuts off long-running media streams mid-transfer.
+		// Use upstream/ingress idle timeouts and request cancellation instead.
+		WriteTimeout:      0,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1 MB
 	}
 }

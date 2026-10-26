@@ -20,6 +20,7 @@ type SecurityComponents struct {
 
 // SetupRoutes configures all API routes
 func SetupRoutes(router *gin.Engine, handler *Handler, logger *logrus.Logger) {
+	_ = router.SetTrustedProxies(nil)
 	// Apply global middleware (basic setup without security components)
 	router.Use(LoggerMiddleware(logger))
 	router.Use(CORSMiddleware())
@@ -32,6 +33,9 @@ func SetupRoutes(router *gin.Engine, handler *Handler, logger *logrus.Logger) {
 // SetupRoutesWithSecurity configures all API routes with full security middleware stack
 // Middleware order: IP Access → Rate Limit → API Key Auth → Size Limits → Validation → Sanitization → Security Headers
 func SetupRoutesWithSecurity(router *gin.Engine, handler *Handler, logger *logrus.Logger, security *SecurityComponents) {
+	_ = router.SetTrustedProxies(nil)
+	// Browser preflight requests must be evaluated ahead of authentication.
+	router.Use(ConfigurableCORSMiddleware(security.Config))
 	// 1. IP Access Control Middleware (earliest - blocks before processing)
 	if security.IPAccessController != nil && security.Config.EnableIPControl {
 		router.Use(IPAccessControlMiddleware(security.IPAccessController, logger))
@@ -59,9 +63,6 @@ func SetupRoutesWithSecurity(router *gin.Engine, handler *Handler, logger *logru
 
 	// 8. Logging Middleware
 	router.Use(LoggerMiddleware(logger))
-
-	// 9. Configurable CORS Middleware
-	router.Use(ConfigurableCORSMiddleware(security.Config))
 
 	// 10. Recovery Middleware with audit logging
 	if security.SecureErrorHandler != nil {

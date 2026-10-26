@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
-	"strings"
+	"net/url"
+		"strings"
 	"time"
 
 	"video-streaming-api/internal/config"
@@ -32,8 +32,12 @@ func NewVideoService(redis *RedisService, cfg *config.Config, logger *logrus.Log
 
 // GetVideoInfo retrieves video information using yt-dlp
 func (s *VideoService) GetVideoInfo(ctx context.Context, platform, videoID string) (*models.VideoInfo, error) {
-	// Generate cache key
-	cacheKey := GenerateCacheKey("video", platform, videoID)
+	videoURL, err := canonicalMediaURL(platform, videoID, false)
+	if err != nil {
+		return nil, err
+	}
+	// Generate cache key from the canonical, validated URL.
+	cacheKey := GenerateCacheKey("video", videoURL)
 
 	// Try cache first
 	var cachedInfo models.VideoInfo
@@ -51,7 +55,6 @@ func (s *VideoService) GetVideoInfo(ctx context.Context, platform, videoID strin
 		"video_id": videoID,
 	}).Info("Fetching video info from yt-dlp")
 
-	videoURL := s.buildVideoURL(platform, videoID)
 	info, err := s.extractVideoInfo(ctx, videoURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract video info: %w", err)
@@ -67,7 +70,11 @@ func (s *VideoService) GetVideoInfo(ctx context.Context, platform, videoID strin
 
 // GetPlaylistInfo retrieves playlist metadata using yt-dlp
 func (s *VideoService) GetPlaylistInfo(ctx context.Context, platform, playlistID string) (*models.PlaylistInfo, error) {
-	cacheKey := GenerateCacheKey("playlist", platform, playlistID)
+	playlistURL, err := canonicalMediaURL(platform, playlistID, true)
+	if err != nil {
+		return nil, err
+	}
+	cacheKey := GenerateCacheKey("playlist", playlistURL)
 
 	var cachedInfo models.PlaylistInfo
 	if err := s.redis.GetJSON(ctx, cacheKey, &cachedInfo); err == nil {
@@ -78,7 +85,6 @@ func (s *VideoService) GetPlaylistInfo(ctx context.Context, platform, playlistID
 		return &cachedInfo, nil
 	}
 
-	playlistURL := s.buildVideoURL(platform, playlistID)
 	info, err := s.extractPlaylistInfo(ctx, playlistURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract playlist info: %w", err)
@@ -92,41 +98,46 @@ func (s *VideoService) GetPlaylistInfo(ctx context.Context, platform, playlistID
 }
 
 // GetStreamURL retrieves a stream URL for a video
+// GetStreamURL returns one URL usable for redirect or byte-stream proxy.
 func (s *VideoService) GetStreamURL(ctx context.Context, platform, videoID, quality string) (string, error) {
-	// Generate cache key
-	cacheKey := GenerateCacheKey("stream", platform, videoID, quality)
+	streamURL, _, err := s.GetStreamURLWithCacheStatus(ctx, platform, videoID, quality)
+	return streamURL, err
+}
 
-	// Try cache first
+// GetStreamURLWithCacheStatus also reports whether a valid URL came from Redis.
+// Streaming metrics must count actual cache outcomes, not every successful extraction.
+func (s *VideoService) GetStreamURLWithCacheStatus(ctx context.Context, platform, videoID, quality string) (string, bool, error) {
+	videoURL, err := canonicalMediaURL(platform, videoID, false)
+	if err != nil {
+		return "", false, err
+	}
+	cacheKey := GenerateCacheKey("stream_muxed_v2", videoURL, quality)
+
 	if cached, err := s.redis.Get(ctx, cacheKey); err == nil {
-		if sanitized, err := sanitizeStreamURL(cached); err == nil {
+		if sanitized, validationErr := sanitizeStreamURL(cached); validationErr == nil {
 			s.logger.WithFields(logrus.Fields{
 				"platform": platform,
-				"video_id": videoID,
-				"quality":  quality,
+				"quality": quality,
 			}).Debug("Stream URL cache hit")
-			return sanitized, nil
+			return sanitized, true, nil
+		} else {
+			s.logger.WithError(validationErr).Warn("Cached stream URL invalid, regenerating")
 		}
-
-		s.logger.WithError(err).Warn("Cached stream URL invalid, regenerating")
 	}
 
-	// Cache miss - get from yt-dlp
-	videoURL := s.buildVideoURL(platform, videoID)
 	streamURL, err := s.extractStreamURL(ctx, videoURL, quality)
 	if err != nil {
-		return "", fmt.Errorf("failed to extract stream URL: %w", err)
+		return "", false, fmt.Errorf("failed to extract stream URL: %w", err)
 	}
 	streamURL, err = sanitizeStreamURL(streamURL)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
-	// Cache the result
 	if err := s.redis.Set(ctx, cacheKey, streamURL, s.cfg.StreamURLTTL); err != nil {
 		s.logger.WithError(err).Warn("Failed to cache stream URL")
 	}
-
-	return streamURL, nil
+	return streamURL, false, nil
 }
 
 // extractVideoInfo calls yt-dlp to extract video information
@@ -134,8 +145,9 @@ func (s *VideoService) extractVideoInfo(ctx context.Context, videoURL string) (*
 	args := []string{
 		"--dump-json",
 		"--no-playlist",
-		"--no-check-certificates",
+		"--ignore-config",
 		"--socket-timeout", "30",
+		"--",
 		videoURL,
 	}
 
@@ -143,16 +155,11 @@ func (s *VideoService) extractVideoInfo(ctx context.Context, videoURL string) (*
 		"video_url": videoURL,
 	}).Debug("Fetching video info with yt-dlp")
 
-	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
-
-	output, err := cmd.CombinedOutput()
+	output, err := s.runYtDLP(ctx, args)
 	if err != nil {
-		outputStr := strings.TrimSpace(string(output))
-		s.logger.WithFields(logrus.Fields{
-			"video_url": videoURL,
-			"output":    outputStr,
-			"error":     err.Error(),
-		}).Error("yt-dlp command failed for video info")
+		// Raw extractor stdout can include signed media URLs and tokens.
+		s.logger.WithField("platform", s.DetectPlatform(videoURL)).
+			WithError(err).Error("yt-dlp command failed for video info")
 		return nil, fmt.Errorf("yt-dlp command failed: %w", err)
 	}
 
@@ -219,8 +226,9 @@ func (s *VideoService) extractPlaylistInfo(ctx context.Context, playlistURL stri
 	args := []string{
 		"--dump-single-json",
 		"--flat-playlist",
-		"--no-check-certificates",
+		"--ignore-config",
 		"--socket-timeout", "30",
+		"--",
 		playlistURL,
 	}
 
@@ -228,16 +236,11 @@ func (s *VideoService) extractPlaylistInfo(ctx context.Context, playlistURL stri
 		"playlist_url": playlistURL,
 	}).Debug("Fetching playlist info with yt-dlp")
 
-	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
-
-	output, err := cmd.CombinedOutput()
+	output, err := s.runYtDLP(ctx, args)
 	if err != nil {
-		outputStr := strings.TrimSpace(string(output))
-		s.logger.WithFields(logrus.Fields{
-			"playlist_url": playlistURL,
-			"output":       outputStr,
-			"error":        err.Error(),
-		}).Error("yt-dlp command failed for playlist info")
+		// Do not persist raw metadata/extractor stdout in application logs.
+		s.logger.WithField("platform", s.DetectPlatform(playlistURL)).
+			WithError(err).Error("yt-dlp command failed for playlist info")
 		return nil, fmt.Errorf("yt-dlp playlist command failed: %w", err)
 	}
 
@@ -286,42 +289,39 @@ func (s *VideoService) extractPlaylistInfo(ctx context.Context, playlistURL stri
 
 // IsPlaylist checks if the given video ID/URL is a playlist
 func (s *VideoService) IsPlaylist(ctx context.Context, platform, videoID string) (bool, error) {
+	videoURL, err := canonicalMediaURL(platform, videoID, false)
+	if err != nil {
+		return false, err
+	}
 	// Generate cache key for playlist detection
-	cacheKey := GenerateCacheKey("is_playlist", platform, videoID)
+	cacheKey := GenerateCacheKey("is_playlist", videoURL)
 
 	// Try cache first
 	if cached, err := s.redis.Get(ctx, cacheKey); err == nil {
 		return strings.EqualFold(cached, "true"), nil
 	}
 
-	videoURL := s.buildVideoURL(platform, videoID)
-
 	args := []string{
 		"--dump-json",
-		"--no-check-certificates",
+		"--ignore-config",
 		"--socket-timeout", "30",
+		"--",
 		videoURL,
 	}
 
-	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
-
-	output, err := cmd.CombinedOutput()
+	output, err := s.runYtDLP(ctx, args)
 	if err != nil {
-		outputStr := strings.TrimSpace(string(output))
 		s.logger.WithFields(logrus.Fields{
-			"platform":   platform,
-			"video_id":   videoID,
-			"video_url":  videoURL,
-			"output":     outputStr,
-			"error":      err.Error(),
-		}).Warn("Failed to detect playlist type")
+			"platform": platform,
+			"video_id": videoID,
+		}).WithError(err).Warn("Failed to detect playlist type")
 		return false, fmt.Errorf("yt-dlp command failed: %w", err)
 	}
 
 	var ytdlpInfo struct {
 		Entries       interface{} `json:"entries"`
 		ID            string      `json:"id"`
-		_Type         string      `json:"_type"`
+		Type          string      `json:"_type"`
 		IsPlaylist    bool        `json:"is_playlist"`
 	}
 
@@ -331,7 +331,7 @@ func (s *VideoService) IsPlaylist(ctx context.Context, platform, videoID string)
 	}
 
 	// Determine if it's a playlist based on multiple indicators
-	isPlaylist := ytdlpInfo.Entries != nil || ytdlpInfo.IsPlaylist || ytdlpInfo._Type == "playlist"
+	isPlaylist := ytdlpInfo.Entries != nil || ytdlpInfo.IsPlaylist || ytdlpInfo.Type == "playlist"
 
 	// Cache the result with a longer TTL for playlist detection (24 hours)
 	result := "false"
@@ -358,41 +358,32 @@ func (s *VideoService) extractStreamURL(ctx context.Context, videoURL, quality s
 	// Build command with enhanced quality flags
 	args := []string{
 		"--get-url",
+		"--no-warnings",
 		"-f", formatSelector,
 		"--no-playlist",
-		"--no-check-certificates",
+		"--ignore-config",
 		"--socket-timeout", "30",
 		"--extractor-args", "youtube:player_client=ios,web,android",
 		"--prefer-free-formats",
 	}
 
-	args = append(args, videoURL)
+	args = append(args, "--", videoURL)
 
 	s.logger.WithFields(logrus.Fields{
 		"video_url": videoURL,
 		"quality":   quality,
 	}).Debug("Executing yt-dlp command for stream URL")
 
-	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
-
-	output, err := cmd.CombinedOutput()
+	output, err := s.runYtDLP(ctx, args)
 	outputStr := strings.TrimSpace(string(output))
 
 	if err != nil {
-		// Truncate output for logging if too long
-		logOutput := outputStr
-		if len(logOutput) > 500 {
-			logOutput = logOutput[:500] + "... (truncated)"
-		}
-		
+		// stdout may contain expiring signed URLs, never log or reflect it.
 		s.logger.WithFields(logrus.Fields{
-			"video_url":  videoURL,
-			"quality":    quality,
-			"output":     logOutput,
-			"error":      err.Error(),
-		}).Error("yt-dlp command failed for stream extraction")
-		
-		return "", fmt.Errorf("yt-dlp failed: %v", err)
+			"platform": s.DetectPlatform(videoURL),
+			"quality": quality,
+		}).WithError(err).Error("yt-dlp stream extraction failed")
+		return "", fmt.Errorf("yt-dlp stream extraction failed: %w", err)
 	}
 
 	if outputStr == "" {
@@ -406,88 +397,73 @@ func (s *VideoService) extractStreamURL(ctx context.Context, videoURL, quality s
 	return sanitizeStreamURL(outputStr)
 }
 
-// sanitizeStreamURL strips whitespace and multi-line entries, returning the first valid URL.
+// sanitizeStreamURL requires exactly one usable stream. yt-dlp can emit
+// multiple URLs for video+audio formats; selecting only the first silently
+// produces video without audio, so reject ambiguous outputs.
 func sanitizeStreamURL(raw string) (string, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return "", fmt.Errorf("no stream URL found")
-	}
-
-	for _, line := range strings.Split(trimmed, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
+	var streamURL string
+	for _, line := range strings.Split(raw, "\n") {
+		candidate := strings.TrimSpace(line)
+		if candidate == "" || validateStreamURL(candidate) != nil {
 			continue
 		}
-		return line, nil
+		if streamURL != "" {
+			return "", fmt.Errorf("yt-dlp returned multiple media URLs; remuxing is required")
+		}
+		streamURL = candidate
 	}
-
-	return "", fmt.Errorf("no stream URL found")
+	if streamURL == "" {
+		return "", fmt.Errorf("yt-dlp returned no valid public HTTP(S) stream URL")
+	}
+	return streamURL, nil
 }
 
-// buildVideoURL constructs a video URL from platform and ID
-func (s *VideoService) buildVideoURL(platform, videoID string) string {
-	// If videoID is already a full URL, return it as-is
-	if strings.HasPrefix(strings.ToLower(videoID), "http://") || strings.HasPrefix(strings.ToLower(videoID), "https://") {
-		return videoID
+// DetectPlatform determines the provider for a canonical media URL.
+func (s *VideoService) DetectPlatform(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "unknown"
 	}
-
-	switch strings.ToLower(platform) {
-	case "youtube":
-		return fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID)
-	case "bilibili":
-		return fmt.Sprintf("https://www.bilibili.com/video/%s", videoID)
-	case "twitter", "x":
-		return fmt.Sprintf("https://twitter.com/i/status/%s", videoID)
-	case "instagram":
-		return fmt.Sprintf("https://www.instagram.com/p/%s", videoID)
-	case "twitch":
-		return fmt.Sprintf("https://www.twitch.tv/videos/%s", videoID)
-	default:
-		// Assume videoID is a full URL
-		return videoID
-	}
-}
-
-// DetectPlatform detects the platform from a URL
-func (s *VideoService) DetectPlatform(url string) string {
-	url = strings.ToLower(url)
-	switch {
-	case strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be"):
+	switch strings.ToLower(u.Hostname()) {
+	case "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be":
 		return "youtube"
-	case strings.Contains(url, "bilibili.com") || strings.Contains(url, "b23.tv"):
+	case "bilibili.com", "www.bilibili.com":
 		return "bilibili"
-	case strings.Contains(url, "twitter.com") || strings.Contains(url, "x.com"):
+	case "twitter.com", "www.twitter.com", "x.com", "www.x.com":
 		return "twitter"
-	case strings.Contains(url, "instagram.com"):
+	case "instagram.com", "www.instagram.com":
 		return "instagram"
-	case strings.Contains(url, "twitch.tv"):
+	case "twitch.tv", "www.twitch.tv":
 		return "twitch"
 	default:
 		return "unknown"
 	}
 }
 
-// getFormatSelector returns the yt-dlp format selector for a quality
+// getFormatSelector selects a single muxed video+audio URL.
+// A separate bestvideo+bestaudio selection emits two URLs, which a raw
+// 302 redirect or byte proxy cannot combine. Higher resolutions that only
+// offer DASH tracks require a future server-side muxing implementation.
 func (s *VideoService) getFormatSelector(quality string) string {
 	switch strings.ToLower(quality) {
 	case "best", "", "auto", "highest":
-		return "bestvideo[vcodec^=vp9][height>=1080]+bestaudio[acodec=opus]/bestvideo[vcodec^=av01]+bestaudio[acodec=opus]/bestvideo[ext=mp4][height>=1080]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
+		return "best"
 	case "worst":
-		return "worstvideo+worstaudio/worst"
+		return "worst"
 	case "2160p", "4k":
-		return "bestvideo[vcodec^=vp9][height<=2160]+bestaudio[acodec=opus]/bestvideo[vcodec^=av01][height<=2160]+bestaudio[acodec=opus]/bestvideo[ext=mp4][height<=2160]+bestaudio[ext=m4a]/bestvideo[height<=2160]+bestaudio/best[height<=2160]"
+		return "best[ext=mp4][height<=2160]/best[height<=2160]"
 	case "1440p":
-		return "bestvideo[vcodec^=vp9][height<=1440]+bestaudio[acodec=opus]/bestvideo[ext=mp4][height<=1440]+bestaudio[ext=m4a]/bestvideo[height<=1440]+bestaudio/best[height<=1440]"
+		return "best[ext=mp4][height<=1440]/best[height<=1440]"
 	case "1080p", "hd":
-		return "bestvideo[vcodec^=vp9][height<=1080]+bestaudio[acodec=opus]/bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+		return "best[ext=mp4][height<=1080]/best[height<=1080]"
 	case "720p":
-		return "bestvideo[vcodec^=vp9][height<=720]+bestaudio[acodec=opus]/bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]"
+		return "best[ext=mp4][height<=720]/best[height<=720]"
 	case "480p", "sd":
-		return "bestvideo[ext=mp4][height<=480]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best[height<=480]"
+		return "best[ext=mp4][height<=480]/best[height<=480]"
 	case "360p":
-		return "bestvideo[ext=mp4][height<=360]+bestaudio[ext=m4a]/bestvideo[height<=360]+bestaudio/best[height<=360]"
+		return "best[ext=mp4][height<=360]/best[height<=360]"
 	default:
-		return "bestvideo+bestaudio/best"
+		return "best"
 	}
 }
 

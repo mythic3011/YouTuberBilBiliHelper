@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,29 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )
+
+// A capacity limit bounds simultaneous long-lived proxy downloads.
+// Direct CDN redirects do not occupy a proxy slot.
+const maxConcurrentProxyStreams = 32
+
+var proxyStreamSlots = make(chan struct{}, maxConcurrentProxyStreams)
+
+// ErrStreamCapacity signals that this instance has no free streaming slots.
+var ErrStreamCapacity = errors.New("proxy streaming capacity exceeded")
+
+func acquireStreamSlot(ctx context.Context, slots chan struct{}) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	select {
+	case slots <- struct{}{}:
+		return func() { <-slots }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+		return nil, ErrStreamCapacity
+	}
+}
 
 // StreamingService handles video streaming operations
 type StreamingService struct {
@@ -44,15 +68,24 @@ func NewStreamingService(video *VideoService, redis *RedisService, cfg *config.C
 // StreamVideo streams a video through the proxy
 func (s *StreamingService) StreamVideo(c *gin.Context, platform, videoID, quality string, isPlaylist bool) error {
 	atomic.AddInt64(&s.totalRequests, 1)
+	releaseSlot, err := acquireStreamSlot(c.Request.Context(), proxyStreamSlots)
+	if err != nil {
+		return err
+	}
+	defer releaseSlot()
 	atomic.AddInt32(&s.activeStreams, 1)
 	defer atomic.AddInt32(&s.activeStreams, -1)
 
 	startTime := time.Now()
 
 	// Get stream URL
-	streamURL, err := s.video.GetStreamURL(c.Request.Context(), platform, videoID, quality)
-	if err != nil {
+	streamURL, cacheHit, err := s.video.GetStreamURLWithCacheStatus(c.Request.Context(), platform, videoID, quality)
+	if cacheHit {
+		atomic.AddInt64(&s.cacheHits, 1)
+	} else {
 		atomic.AddInt64(&s.cacheMisses, 1)
+	}
+	if err != nil {
 		return fmt.Errorf("failed to get stream URL: %w", err)
 	}
 
@@ -62,13 +95,11 @@ func (s *StreamingService) StreamVideo(c *gin.Context, platform, videoID, qualit
 			"platform":     platform,
 			"video_id":     videoID,
 			"quality":      quality,
-			"stream_url":   streamURL,
 			"is_playlist":  isPlaylist,
 		}).Warn("m3u8 format detected for non-playlist content")
 		return fmt.Errorf("m3u8 format not supported for non-playlist content")
 	}
 
-	atomic.AddInt64(&s.cacheHits, 1)
 
 	// Fetch the video stream
 	req, err := http.NewRequestWithContext(c.Request.Context(), "GET", streamURL, nil)
@@ -76,29 +107,23 @@ func (s *StreamingService) StreamVideo(c *gin.Context, platform, videoID, qualit
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Copy headers from original request
-	for key, values := range c.Request.Header {
-		for _, value := range values {
-			req.Header.Add(key, value)
-		}
-	}
+	// Never forward caller credentials, cookies, or API keys to video CDNs.
+	copySafeStreamRequestHeaders(req.Header, c.Request.Header)
 
-	// Execute request
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-	resp, err := client.Do(req)
+	// Enforce public IPs at connection time (including redirects and DNS changes).
+	resp, err := safeStreamHTTPClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to fetch stream: %w", err)
+		// http.Client errors may include a signed URL and query token.
+		// Preserve cancellation semantics without exposing upstream URLs in logs.
+		if c.Request.Context().Err() != nil {
+			return c.Request.Context().Err()
+		}
+		return fmt.Errorf("failed to fetch upstream media")
 	}
 	defer resp.Body.Close()
 
-	// Copy response headers
-	for key, values := range resp.Header {
-		for _, value := range values {
-			c.Header(key, value)
-		}
-	}
+	// Propagate media metadata, not upstream cookies or hop-by-hop headers.
+	copySafeStreamResponseHeaders(c.Writer.Header(), resp.Header)
 
 	// Set additional headers
 	c.Header("X-Proxy-Server", "Go-Streaming-API")
@@ -131,13 +156,16 @@ func (s *StreamingService) StreamVideo(c *gin.Context, platform, videoID, qualit
 func (s *StreamingService) GetDirectStreamURL(ctx context.Context, platform, videoID, quality string) (string, error) {
 	atomic.AddInt64(&s.totalRequests, 1)
 
-	streamURL, err := s.video.GetStreamURL(ctx, platform, videoID, quality)
-	if err != nil {
+	streamURL, cacheHit, err := s.video.GetStreamURLWithCacheStatus(ctx, platform, videoID, quality)
+	if cacheHit {
+		atomic.AddInt64(&s.cacheHits, 1)
+	} else {
 		atomic.AddInt64(&s.cacheMisses, 1)
+	}
+	if err != nil {
 		return "", fmt.Errorf("failed to get stream URL: %w", err)
 	}
 
-	atomic.AddInt64(&s.cacheHits, 1)
 	return streamURL, nil
 }
 

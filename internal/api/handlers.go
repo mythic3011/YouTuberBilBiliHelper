@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -64,10 +65,12 @@ func (h *Handler) Root(c *gin.Context) {
 		"health_url":  "/api/v2/system/health",
 		"endpoints": gin.H{
 			"health":    "/api/v2/system/health",
-			"streaming": "/api/v2/stream/proxy/:platform/:video_id",
-			"direct":    "/api/v2/stream/direct/:platform/:video_id",
-			"smart":     "/api/v2/stream/smart/:platform/:video_id",
+			"streaming": "/api/v2/stream/:platform/:video_id?mode=proxy",
+			"direct":    "/api/v2/stream/:platform/:video_id?mode=direct",
+			"smart":     "/api/v2/stream/:platform/:video_id",
 			"info":      "/api/v2/videos/:platform/:video_id",
+			"playlist":  "/api/v2/playlists/:platform/:playlist_id",
+			"metrics":   "/api/v2/stream/metrics",
 		},
 		"supported_platforms": []string{"youtube", "bilibili", "twitter", "instagram", "twitch"},
 		"timestamp":           time.Now(),
@@ -189,26 +192,9 @@ func (h *Handler) StreamVideo(c *gin.Context) {
 	platform := c.Param("platform")
 	videoID := strings.TrimPrefix(c.Param("video_id"), "/")
 	
-	// Handle URL passed in path (e.g., /api/v2/stream/https:/www.youtube.com/watch?v=...)
-	// Reconstruct full URL if platform looks like a URL scheme
-	if platform == "http:" || platform == "https:" {
-		// Reconstruct the full URL from the request
-		fullURL := platform + videoID
-		// If query parameters exist, append them
-		if rawQuery := c.Request.URL.RawQuery; rawQuery != "" {
-			fullURL += "?" + rawQuery
-		}
-		
-		// Detect platform from URL
-		detectedPlatform := h.video.DetectPlatform(fullURL)
-		if detectedPlatform == "unknown" {
-			h.errorResponse(c, http.StatusBadRequest, "Cannot detect platform from URL", fullURL)
-			return
-		}
-		platform = detectedPlatform
-		videoID = fullURL
-	}
-	
+	// Stream paths accept platform-native IDs. Full URLs are not valid
+	// path parameters because their slashes and query strings are ambiguous.
+	// The service layer validates canonical provider URLs before yt-dlp.
 	quality := c.DefaultQuery("quality", "best")
 	mode := strings.ToLower(c.DefaultQuery("mode", ""))
 
@@ -232,7 +218,6 @@ func (h *Handler) StreamVideo(c *gin.Context) {
 	}
 	reqFields := logrus.Fields{
 		"platform": platform,
-		"video_id": videoID,
 		"quality":  quality,
 		"mode":     modeLabel,
 		"country":  strings.ToUpper(h.detectCountry(c)),
@@ -241,6 +226,11 @@ func (h *Handler) StreamVideo(c *gin.Context) {
 	if useProxy {
 		h.logger.WithFields(reqFields).Info("Smart streaming via proxy")
 		if err := h.streaming.StreamVideo(c, platform, videoID, quality, false); err != nil {
+			if errors.Is(err, services.ErrStreamCapacity) {
+				c.Header("Retry-After", "5")
+				h.errorResponse(c, http.StatusServiceUnavailable, "Proxy streaming capacity reached", "")
+				return
+			}
 			h.logger.WithError(err).Error("Failed to stream video")
 			if !c.Writer.Written() {
 				h.errorResponse(c, http.StatusInternalServerError, "Failed to stream video", err.Error())

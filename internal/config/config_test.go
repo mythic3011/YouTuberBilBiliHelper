@@ -368,3 +368,11 @@ func validSecurityConfig() SecurityConfig {
 		ExposeDetailedErrors: false,
 	}
 }
+
+func TestAPIKeyExemptIPsAreDisabledByDefault(t *testing.T) {
+	t.Setenv("API_KEY_EXEMPT_IPS", "")
+	cfg := Load()
+	if len(cfg.Security.APIKeyExemptIPs) != 0 {
+		t.Fatalf("unexpected default API-key exemption: %#v", cfg.Security.APIKeyExemptIPs)
+	}
+}
