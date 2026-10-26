@@ -98,44 +98,46 @@ func (s *VideoService) GetPlaylistInfo(ctx context.Context, platform, playlistID
 }
 
 // GetStreamURL retrieves a stream URL for a video
+// GetStreamURL returns one URL usable for redirect or byte-stream proxy.
 func (s *VideoService) GetStreamURL(ctx context.Context, platform, videoID, quality string) (string, error) {
+	streamURL, _, err := s.GetStreamURLWithCacheStatus(ctx, platform, videoID, quality)
+	return streamURL, err
+}
+
+// GetStreamURLWithCacheStatus also reports whether a valid URL came from Redis.
+// Streaming metrics must count actual cache outcomes, not every successful extraction.
+func (s *VideoService) GetStreamURLWithCacheStatus(ctx context.Context, platform, videoID, quality string) (string, bool, error) {
 	videoURL, err := canonicalMediaURL(platform, videoID, false)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	// Generate cache key from validated, canonical input.
 	cacheKey := GenerateCacheKey("stream_muxed_v2", videoURL, quality)
 
-	// Try cache first
 	if cached, err := s.redis.Get(ctx, cacheKey); err == nil {
-		if sanitized, err := sanitizeStreamURL(cached); err == nil {
+		if sanitized, validationErr := sanitizeStreamURL(cached); validationErr == nil {
 			s.logger.WithFields(logrus.Fields{
 				"platform": platform,
-				"video_id": videoID,
-				"quality":  quality,
+				"quality": quality,
 			}).Debug("Stream URL cache hit")
-			return sanitized, nil
+			return sanitized, true, nil
+		} else {
+			s.logger.WithError(validationErr).Warn("Cached stream URL invalid, regenerating")
 		}
-
-		s.logger.WithError(err).Warn("Cached stream URL invalid, regenerating")
 	}
 
-	// Cache miss - get from yt-dlp
 	streamURL, err := s.extractStreamURL(ctx, videoURL, quality)
 	if err != nil {
-		return "", fmt.Errorf("failed to extract stream URL: %w", err)
+		return "", false, fmt.Errorf("failed to extract stream URL: %w", err)
 	}
 	streamURL, err = sanitizeStreamURL(streamURL)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
-	// Cache the result
 	if err := s.redis.Set(ctx, cacheKey, streamURL, s.cfg.StreamURLTTL); err != nil {
 		s.logger.WithError(err).Warn("Failed to cache stream URL")
 	}
-
-	return streamURL, nil
+	return streamURL, false, nil
 }
 
 // extractVideoInfo calls yt-dlp to extract video information
