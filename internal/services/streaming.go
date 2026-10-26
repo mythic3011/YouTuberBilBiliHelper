@@ -50,9 +50,13 @@ func (s *StreamingService) StreamVideo(c *gin.Context, platform, videoID, qualit
 	startTime := time.Now()
 
 	// Get stream URL
-	streamURL, err := s.video.GetStreamURL(c.Request.Context(), platform, videoID, quality)
-	if err != nil {
+	streamURL, cacheHit, err := s.video.GetStreamURLWithCacheStatus(c.Request.Context(), platform, videoID, quality)
+	if cacheHit {
+		atomic.AddInt64(&s.cacheHits, 1)
+	} else {
 		atomic.AddInt64(&s.cacheMisses, 1)
+	}
+	if err != nil {
 		return fmt.Errorf("failed to get stream URL: %w", err)
 	}
 
@@ -67,7 +71,6 @@ func (s *StreamingService) StreamVideo(c *gin.Context, platform, videoID, qualit
 		return fmt.Errorf("m3u8 format not supported for non-playlist content")
 	}
 
-	atomic.AddInt64(&s.cacheHits, 1)
 
 	// Fetch the video stream
 	req, err := http.NewRequestWithContext(c.Request.Context(), "GET", streamURL, nil)
@@ -124,13 +127,16 @@ func (s *StreamingService) StreamVideo(c *gin.Context, platform, videoID, qualit
 func (s *StreamingService) GetDirectStreamURL(ctx context.Context, platform, videoID, quality string) (string, error) {
 	atomic.AddInt64(&s.totalRequests, 1)
 
-	streamURL, err := s.video.GetStreamURL(ctx, platform, videoID, quality)
-	if err != nil {
+	streamURL, cacheHit, err := s.video.GetStreamURLWithCacheStatus(ctx, platform, videoID, quality)
+	if cacheHit {
+		atomic.AddInt64(&s.cacheHits, 1)
+	} else {
 		atomic.AddInt64(&s.cacheMisses, 1)
+	}
+	if err != nil {
 		return "", fmt.Errorf("failed to get stream URL: %w", err)
 	}
 
-	atomic.AddInt64(&s.cacheHits, 1)
 	return streamURL, nil
 }
 
