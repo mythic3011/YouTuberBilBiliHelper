@@ -104,7 +104,7 @@ func (s *VideoService) GetStreamURL(ctx context.Context, platform, videoID, qual
 		return "", err
 	}
 	// Generate cache key from validated, canonical input.
-	cacheKey := GenerateCacheKey("stream", videoURL, quality)
+	cacheKey := GenerateCacheKey("stream_muxed_v2", videoURL, quality)
 
 	// Try cache first
 	if cached, err := s.redis.Get(ctx, cacheKey); err == nil {
@@ -366,6 +366,7 @@ func (s *VideoService) extractStreamURL(ctx context.Context, videoURL, quality s
 	// Build command with enhanced quality flags
 	args := []string{
 		"--get-url",
+		"--no-warnings",
 		"-f", formatSelector,
 		"--no-playlist",
 		"--ignore-config",
@@ -385,20 +386,12 @@ func (s *VideoService) extractStreamURL(ctx context.Context, videoURL, quality s
 	outputStr := strings.TrimSpace(string(output))
 
 	if err != nil {
-		// Truncate output for logging if too long
-		logOutput := outputStr
-		if len(logOutput) > 500 {
-			logOutput = logOutput[:500] + "... (truncated)"
-		}
-		
+		// stdout may contain expiring signed URLs, never log or reflect it.
 		s.logger.WithFields(logrus.Fields{
-			"video_url":  videoURL,
-			"quality":    quality,
-			"output":     logOutput,
-			"error":      err.Error(),
-		}).Error("yt-dlp command failed for stream extraction")
-		
-		return "", fmt.Errorf("yt-dlp failed: %v", err)
+			"platform": s.DetectPlatform(videoURL),
+			"quality": quality,
+		}).WithError(err).Error("yt-dlp stream extraction failed")
+		return "", fmt.Errorf("yt-dlp stream extraction failed: %w", err)
 	}
 
 	if outputStr == "" {
@@ -412,18 +405,25 @@ func (s *VideoService) extractStreamURL(ctx context.Context, videoURL, quality s
 	return sanitizeStreamURL(outputStr)
 }
 
-// sanitizeStreamURL ignores yt-dlp warnings and accepts only public HTTP(S) URLs.
+// sanitizeStreamURL requires exactly one usable stream. yt-dlp can emit
+// multiple URLs for video+audio formats; selecting only the first silently
+// produces video without audio, so reject ambiguous outputs.
 func sanitizeStreamURL(raw string) (string, error) {
+	var streamURL string
 	for _, line := range strings.Split(raw, "\n") {
 		candidate := strings.TrimSpace(line)
-		if candidate == "" {
+		if candidate == "" || validateStreamURL(candidate) != nil {
 			continue
 		}
-		if err := validateStreamURL(candidate); err == nil {
-			return candidate, nil
+		if streamURL != "" {
+			return "", fmt.Errorf("yt-dlp returned multiple media URLs; remuxing is required")
 		}
+		streamURL = candidate
 	}
-	return "", fmt.Errorf("yt-dlp returned no valid public HTTP(S) stream URL")
+	if streamURL == "" {
+		return "", fmt.Errorf("yt-dlp returned no valid public HTTP(S) stream URL")
+	}
+	return streamURL, nil
 }
 
 // DetectPlatform determines the provider for a canonical media URL.
@@ -448,27 +448,30 @@ func (s *VideoService) DetectPlatform(rawURL string) string {
 	}
 }
 
-// getFormatSelector returns the yt-dlp format selector for a quality
+// getFormatSelector selects a single muxed video+audio URL.
+// A separate bestvideo+bestaudio selection emits two URLs, which a raw
+// 302 redirect or byte proxy cannot combine. Higher resolutions that only
+// offer DASH tracks require a future server-side muxing implementation.
 func (s *VideoService) getFormatSelector(quality string) string {
 	switch strings.ToLower(quality) {
 	case "best", "", "auto", "highest":
-		return "bestvideo[vcodec^=vp9][height>=1080]+bestaudio[acodec=opus]/bestvideo[vcodec^=av01]+bestaudio[acodec=opus]/bestvideo[ext=mp4][height>=1080]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
+		return "best"
 	case "worst":
-		return "worstvideo+worstaudio/worst"
+		return "worst"
 	case "2160p", "4k":
-		return "bestvideo[vcodec^=vp9][height<=2160]+bestaudio[acodec=opus]/bestvideo[vcodec^=av01][height<=2160]+bestaudio[acodec=opus]/bestvideo[ext=mp4][height<=2160]+bestaudio[ext=m4a]/bestvideo[height<=2160]+bestaudio/best[height<=2160]"
+		return "best[ext=mp4][height<=2160]/best[height<=2160]"
 	case "1440p":
-		return "bestvideo[vcodec^=vp9][height<=1440]+bestaudio[acodec=opus]/bestvideo[ext=mp4][height<=1440]+bestaudio[ext=m4a]/bestvideo[height<=1440]+bestaudio/best[height<=1440]"
+		return "best[ext=mp4][height<=1440]/best[height<=1440]"
 	case "1080p", "hd":
-		return "bestvideo[vcodec^=vp9][height<=1080]+bestaudio[acodec=opus]/bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+		return "best[ext=mp4][height<=1080]/best[height<=1080]"
 	case "720p":
-		return "bestvideo[vcodec^=vp9][height<=720]+bestaudio[acodec=opus]/bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]"
+		return "best[ext=mp4][height<=720]/best[height<=720]"
 	case "480p", "sd":
-		return "bestvideo[ext=mp4][height<=480]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best[height<=480]"
+		return "best[ext=mp4][height<=480]/best[height<=480]"
 	case "360p":
-		return "bestvideo[ext=mp4][height<=360]+bestaudio[ext=m4a]/bestvideo[height<=360]+bestaudio/best[height<=360]"
+		return "best[ext=mp4][height<=360]/best[height<=360]"
 	default:
-		return "bestvideo+bestaudio/best"
+		return "best"
 	}
 }
 
