@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 	"net/netip"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -211,5 +212,31 @@ func TestReadIdleConnAllowsSubsequentActivity(t *testing.T) {
 	n, err := conn.Read(buf)
 	if err != nil || string(buf[:n]) != "ok" {
 		t.Fatalf("active stream read failed: %q (%v)", buf[:n], err)
+	}
+}
+
+func TestStreamRedirectPolicyRejectsUnsafeDestinations(t *testing.T) {
+	check := safeStreamHTTPClient.CheckRedirect
+	for _, tc := range []struct {
+		raw string
+		allow bool
+	}{
+		{"https://cdn.example.com/media", true},
+		{"http://cdn.example.com:80/media", true},
+		{"https://cdn.example.com:443/media", true},
+		{"http://127.0.0.1:80/", false},
+		{"http://169.254.169.254/latest/meta-data/", false},
+		{"https://10.0.0.1/", false},
+		{"http://cdn.example.com:6379/", false},
+		{"https://user:secret@cdn.example.com/media", false},
+		{"file:///etc/passwd", false},
+	} {
+		u, err := url.Parse(tc.raw)
+		if err != nil { t.Fatal(err) }
+		req := &http.Request{URL: u}
+		err = check(req, []*http.Request{{URL: &url.URL{Scheme: "https", Host: "youtube.com"}}})
+		if (err == nil) != tc.allow {
+			t.Errorf("redirect to %q allowed=%v, err=%v", tc.raw, tc.allow, err)
+		}
 	}
 }

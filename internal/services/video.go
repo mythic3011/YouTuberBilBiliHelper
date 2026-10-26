@@ -157,12 +157,9 @@ func (s *VideoService) extractVideoInfo(ctx context.Context, videoURL string) (*
 
 	output, err := s.runYtDLP(ctx, args)
 	if err != nil {
-		outputStr := strings.TrimSpace(string(output))
-		s.logger.WithFields(logrus.Fields{
-			"video_url": videoURL,
-			"output":    outputStr,
-			"error":     err.Error(),
-		}).Error("yt-dlp command failed for video info")
+		// Raw extractor stdout can include signed media URLs and tokens.
+		s.logger.WithField("platform", s.DetectPlatform(videoURL)).
+			WithError(err).Error("yt-dlp command failed for video info")
 		return nil, fmt.Errorf("yt-dlp command failed: %w", err)
 	}
 
@@ -241,12 +238,9 @@ func (s *VideoService) extractPlaylistInfo(ctx context.Context, playlistURL stri
 
 	output, err := s.runYtDLP(ctx, args)
 	if err != nil {
-		outputStr := strings.TrimSpace(string(output))
-		s.logger.WithFields(logrus.Fields{
-			"playlist_url": playlistURL,
-			"output":       outputStr,
-			"error":        err.Error(),
-		}).Error("yt-dlp command failed for playlist info")
+		// Do not persist raw metadata/extractor stdout in application logs.
+		s.logger.WithField("platform", s.DetectPlatform(playlistURL)).
+			WithError(err).Error("yt-dlp command failed for playlist info")
 		return nil, fmt.Errorf("yt-dlp playlist command failed: %w", err)
 	}
 
@@ -317,14 +311,10 @@ func (s *VideoService) IsPlaylist(ctx context.Context, platform, videoID string)
 
 	output, err := s.runYtDLP(ctx, args)
 	if err != nil {
-		outputStr := strings.TrimSpace(string(output))
 		s.logger.WithFields(logrus.Fields{
-			"platform":   platform,
-			"video_id":   videoID,
-			"video_url":  videoURL,
-			"output":     outputStr,
-			"error":      err.Error(),
-		}).Warn("Failed to detect playlist type")
+			"platform": platform,
+			"video_id": videoID,
+		}).WithError(err).Warn("Failed to detect playlist type")
 		return false, fmt.Errorf("yt-dlp command failed: %w", err)
 	}
 
