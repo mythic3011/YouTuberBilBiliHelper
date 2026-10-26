@@ -1,17 +1,18 @@
 # Quick Start Guide
 
-Get the Video Streaming API running in under 5 minutes!
+Get the Video Streaming API running in with a local Docker Compose deployment.
 
 ## Prerequisites
 
 - Docker & Docker Compose (recommended)
-- OR Go 1.21+ and Redis (for local development)
+- OR Go 1.24+ and Redis (for local development)
 
 ## Option 1: Docker (Easiest)
 
 ```bash
 # 1. Start the services
-docker-compose up -d
+mkdir -p config
+docker compose up -d --build
 
 # 2. Test the API
 curl http://localhost:8001/health
@@ -20,7 +21,7 @@ curl http://localhost:8001/health
 curl "http://localhost:8001/api/v2/videos/youtube/dQw4w9WgXcQ"
 ```
 
-That's it! The API is running at http://localhost:8001
+The API is bound to http://127.0.0.1:8001 by default; Redis runs in a private Compose network.
 
 ## Option 2: Local Development
 
@@ -35,7 +36,7 @@ docker run -d -p 6379:6379 redis:alpine
 cp .env.example .env
 
 # 4. Run the API
-go run main.go
+go run .
 ```
 
 ## Common Commands
@@ -51,10 +52,10 @@ make test
 make dev
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
 
 # Stop services
-docker-compose down
+docker compose down
 ```
 
 ## Next Steps
@@ -68,8 +69,8 @@ docker-compose down
 **Port already in use?**
 
 ```bash
-# Change the port in docker-compose.yml or .env
-PORT=8002
+# Override the host port when starting Compose
+PORT=8002 docker compose up -d --build
 ```
 
 **Redis connection failed?**
@@ -81,5 +82,9 @@ docker ps | grep redis
 
 **Need help?**
 
-- Check the logs: `docker-compose logs`
+- Check the logs: `docker compose logs`
 - Open an issue on GitHub
+
+## Streaming limitations
+
+This API uses a single muxed audio+video media URL for direct redirects and proxy streaming; it cannot automatically combine DASH audio and video tracks. Higher resolutions may be unavailable in muxed form. Do not put a full `https://...` URL into an HTTP path parameter: use a platform-native video or playlist ID instead. Before any public deployment, configure TLS ingress, API key authentication and network egress restrictions.
