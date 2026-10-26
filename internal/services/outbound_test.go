@@ -115,3 +115,37 @@ func TestDialPublicStreamAddressRejectsLoopback(t *testing.T) {
 		t.Fatalf("expected blocked loopback: %v", err)
 	}
 }
+
+func TestFormatSelectorReturnsMuxedSingleTrack(t *testing.T) {
+	var video VideoService
+	for _, tc := range []struct{ quality, want string }{
+		{"best", "best"},
+		{"worst", "worst"},
+		{"1080p", "best[ext=mp4][height<=1080]/best[height<=1080]"},
+		{"720p", "best[ext=mp4][height<=720]/best[height<=720]"},
+		{"480p", "best[ext=mp4][height<=480]/best[height<=480]"},
+		{"360p", "best[ext=mp4][height<=360]/best[height<=360]"},
+	} {
+		got := video.getFormatSelector(tc.quality)
+		if got != tc.want {
+			t.Errorf("quality %q: got %q, want %q", tc.quality, got, tc.want)
+		}
+		if strings.ContainsAny(got, "+") {
+			t.Errorf("format selector %q includes separate video/audio tracks", got)
+		}
+	}
+}
+
+func TestSanitizeStreamURLRejectsMultipleURLs(t *testing.T) {
+	for _, raw := range []string{
+		"https://media.example.com/video-only\nhttps://media.example.com/audio-only",
+		"https://media.example.com/video-only\nWARNING: message\nhttps://media.example.com/audio-only",
+	} {
+		if got, err := sanitizeStreamURL(raw); err == nil {
+			t.Errorf("accepted ambiguous two-URL output: %q", got)
+		}
+	}
+	if got, err := sanitizeStreamURL("WARNING: message\nhttps://media.example.com/muxed.mp4"); err != nil || got != "https://media.example.com/muxed.mp4" {
+		t.Fatalf("valid muxed URL rejected: %q (%v)", got, err)
+	}
+}
