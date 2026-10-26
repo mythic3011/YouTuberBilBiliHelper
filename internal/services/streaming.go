@@ -81,7 +81,12 @@ func (s *StreamingService) StreamVideo(c *gin.Context, platform, videoID, qualit
 	// Enforce public IPs at connection time (including redirects and DNS changes).
 	resp, err := safeStreamHTTPClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to fetch stream: %w", err)
+		// http.Client errors may include a signed URL and query token.
+		// Preserve cancellation semantics without exposing upstream URLs in logs.
+		if c.Request.Context().Err() != nil {
+			return c.Request.Context().Err()
+		}
+		return fmt.Errorf("failed to fetch upstream media")
 	}
 	defer resp.Body.Close()
 
