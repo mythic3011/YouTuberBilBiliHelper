@@ -1,7 +1,11 @@
 package services
 
 import (
+	"context"
+	"errors"
+	"net"
 	"net/http"
+	"time"
 	"net/netip"
 	"strings"
 	"testing"
@@ -15,6 +19,10 @@ func TestValidateStreamURL(t *testing.T) {
 		{"https://r1---sn.example.org/videoplayback?token=abc", true},
 		{"http://cdn.example.org/media.mp4", true},
 		{"https://8.8.8.8/stream", true},
+		{"https://cdn.example.org:443/video", true},
+		{"http://cdn.example.org:80/video", true},
+		{"http://cdn.example.org:6379/private", false},
+		{"https://cdn.example.org:8080/admin", false},
 		{"http://127.0.0.1:8000/admin", false},
 		{"http://[::1]/metadata", false},
 		{"http://169.254.169.254/latest/meta-data", false},
@@ -147,5 +155,61 @@ func TestSanitizeStreamURLRejectsMultipleURLs(t *testing.T) {
 	}
 	if got, err := sanitizeStreamURL("WARNING: message\nhttps://media.example.com/muxed.mp4"); err != nil || got != "https://media.example.com/muxed.mp4" {
 		t.Fatalf("valid muxed URL rejected: %q (%v)", got, err)
+	}
+}
+
+func TestAcquireStreamSlotBoundsConcurrency(t *testing.T) {
+	slots := make(chan struct{}, 2)
+	releaseA, err := acquireStreamSlot(context.Background(), slots)
+	if err != nil { t.Fatal(err) }
+	releaseB, err := acquireStreamSlot(context.Background(), slots)
+	if err != nil { t.Fatal(err) }
+	if _, err := acquireStreamSlot(context.Background(), slots); !errors.Is(err, ErrStreamCapacity) {
+		t.Fatalf("expected capacity error, got %v", err)
+	}
+	releaseA()
+	releaseC, err := acquireStreamSlot(context.Background(), slots)
+	if err != nil { t.Fatalf("slot not released: %v", err) }
+	releaseC()
+	releaseB()
+	if len(slots) != 0 { t.Fatal("proxy stream slots leaked") }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := acquireStreamSlot(ctx, slots); !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected cancellation, got %v", err)
+	}
+	if len(slots) != 0 { t.Fatal("canceled request occupied a slot") }
+}
+
+func TestReadIdleConnTimesOutWithoutTraffic(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+	conn := &readIdleConn{Conn: client, timeout: 20 * time.Millisecond}
+	buf := make([]byte, 1)
+	start := time.Now()
+	_, err := conn.Read(buf)
+	var netErr net.Error
+	if !errors.As(err, &netErr) || !netErr.Timeout() {
+		t.Fatalf("expected read timeout, got %v", err)
+	}
+	if time.Since(start) > time.Second {
+		t.Fatal("idle read timeout took too long")
+	}
+}
+
+func TestReadIdleConnAllowsSubsequentActivity(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+	conn := &readIdleConn{Conn: client, timeout: time.Second}
+	go func() {
+		_, _ = server.Write([]byte("ok"))
+	}()
+	buf := make([]byte, 2)
+	n, err := conn.Read(buf)
+	if err != nil || string(buf[:n]) != "ok" {
+		t.Fatalf("active stream read failed: %q (%v)", buf[:n], err)
 	}
 }

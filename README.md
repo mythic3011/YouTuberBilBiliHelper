@@ -379,3 +379,7 @@ MIT License
 ## Deployment security
 
 Compose binds the API to `127.0.0.1` by default and keeps Redis off host ports. Named Docker volumes allow UID 1000 to write audit logs and downloads. Before public exposure, configure TLS ingress and enable API keys. The backend uses the immediate TCP peer for IP allow/deny checks and ignores untrusted forwarding headers; enforce real-client policies at a trusted ingress. The Go media downloader checks IP destinations and redirects, but the separate yt-dlp process still needs container egress restrictions for defense in depth. Streaming cache entries may expire before their TTL if a provider's signed media URL expires early.
+
+## Proxy resource limits
+
+Each API process allows at most **32 simultaneous proxy media responses**. Once the limit is reached, proxy requests return HTTP **503** with `Retry-After: 5`; direct CDN redirects are unaffected. Upstream media connections enforce a **45-second idle read timeout** that resets when network data is received, rather than a total streaming deadline. Outbound media connections accept only ports 80 and 443; this may exclude unusual provider CDNs. These settings supplement, rather than replace, per-client rate limiting and ingress/egress controls.

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -225,6 +226,11 @@ func (h *Handler) StreamVideo(c *gin.Context) {
 	if useProxy {
 		h.logger.WithFields(reqFields).Info("Smart streaming via proxy")
 		if err := h.streaming.StreamVideo(c, platform, videoID, quality, false); err != nil {
+			if errors.Is(err, services.ErrStreamCapacity) {
+				c.Header("Retry-After", "5")
+				h.errorResponse(c, http.StatusServiceUnavailable, "Proxy streaming capacity reached", "")
+				return
+			}
 			h.logger.WithError(err).Error("Failed to stream video")
 			if !c.Writer.Written() {
 				h.errorResponse(c, http.StatusInternalServerError, "Failed to stream video", err.Error())

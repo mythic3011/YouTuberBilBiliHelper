@@ -12,6 +12,22 @@ import (
 	"time"
 )
 
+// Outbound media responses can take minutes. Bound *idle* reads, not the
+// total download time, so slow but active streams can finish.
+const streamReadIdleTimeout = 45 * time.Second
+
+type readIdleConn struct {
+	net.Conn
+	timeout time.Duration
+}
+
+func (c *readIdleConn) Read(buf []byte) (int, error) {
+	if err := c.Conn.SetReadDeadline(time.Now().Add(c.timeout)); err != nil {
+		return 0, err
+	}
+	return c.Conn.Read(buf)
+}
+
 // Reserved address ranges not all covered by netip.Addr.IsPrivate.
 var blockedIPv4Ranges = []netip.Prefix{
 	netip.MustParsePrefix("100.64.0.0/10"), // Shared address space (CGNAT)
@@ -65,6 +81,11 @@ func validateStreamURL(raw string) error {
 		strings.HasSuffix(strings.ToLower(host), ".localhost") {
 		return errors.New("blocked stream URL host")
 	}
+	// CDN downloads use HTTP(S) ports. Prevent SSRF against arbitrary public
+	// services such as databases and admin consoles on custom ports.
+	if port := u.Port(); port != "" && port != "80" && port != "443" {
+		return errors.New("stream URL uses a disallowed port")
+	}
 	if ip, err := netip.ParseAddr(host); err == nil && !isPublicStreamIP(ip) {
 		return errors.New("blocked non-public stream IP")
 	}
@@ -95,7 +116,7 @@ func dialPublicStreamAddress(ctx context.Context, network, address string) (net.
 	for _, ip := range ips {
 		conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
 		if err == nil {
-			return conn, nil
+			return &readIdleConn{Conn: conn, timeout: streamReadIdleTimeout}, nil
 		}
 		dialErr = err
 	}

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,29 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )
+
+// A capacity limit bounds simultaneous long-lived proxy downloads.
+// Direct CDN redirects do not occupy a proxy slot.
+const maxConcurrentProxyStreams = 32
+
+var proxyStreamSlots = make(chan struct{}, maxConcurrentProxyStreams)
+
+// ErrStreamCapacity signals that this instance has no free streaming slots.
+var ErrStreamCapacity = errors.New("proxy streaming capacity exceeded")
+
+func acquireStreamSlot(ctx context.Context, slots chan struct{}) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	select {
+	case slots <- struct{}{}:
+		return func() { <-slots }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+		return nil, ErrStreamCapacity
+	}
+}
 
 // StreamingService handles video streaming operations
 type StreamingService struct {
@@ -44,6 +68,11 @@ func NewStreamingService(video *VideoService, redis *RedisService, cfg *config.C
 // StreamVideo streams a video through the proxy
 func (s *StreamingService) StreamVideo(c *gin.Context, platform, videoID, quality string, isPlaylist bool) error {
 	atomic.AddInt64(&s.totalRequests, 1)
+	releaseSlot, err := acquireStreamSlot(c.Request.Context(), proxyStreamSlots)
+	if err != nil {
+		return err
+	}
+	defer releaseSlot()
 	atomic.AddInt32(&s.activeStreams, 1)
 	defer atomic.AddInt32(&s.activeStreams, -1)
 
