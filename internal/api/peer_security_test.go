@@ -49,3 +49,32 @@ func TestCORSPreflightBeforeAPIKeyAuthentication(t *testing.T) {
 func TestGetClientIPUsesPeer(t *testing.T) {
  if got:=GetClientIP(map[string][]string{"CF-Connecting-IP":{"127.0.0.1"}},"203.0.113.7:1234");got!="203.0.113.7" {t.Fatalf("got spoofed IP %q",got)}
 }
+
+func TestLocalReverseProxyDoesNotBypassAPIKeyByDefault(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv("API_KEY_EXEMPT_IPS", "")
+	cfg := config.Load()
+	cfg.Security.APIKeyEnabled = true
+	cfg.Security.APIKeys = []string{"expected-secret"}
+	cfg.Security.APIKeyHeader = "X-API-Key"
+	router := gin.New()
+	if err := router.SetTrustedProxies(nil); err != nil {
+		t.Fatal(err)
+	}
+	router.Use(APIKeyAuthMiddleware(&cfg.Security, logrus.New()))
+	router.GET("/secure", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	req := httptest.NewRequest(http.MethodGet, "/secure", nil)
+	req.RemoteAddr = "127.0.0.1:55000" // TLS ingress on the same host
+	req.Header.Set("X-Forwarded-For", "203.0.113.15")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("localhost ingress bypassed API key auth: got %d", rec.Code)
+	}
+	req.Header.Set("X-API-Key", "expected-secret")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("authorized ingress request was denied: %d", rec.Code)
+	}
+}

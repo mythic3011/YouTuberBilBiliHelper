@@ -383,3 +383,5 @@ Compose binds the API to `127.0.0.1` by default and keeps Redis off host ports. 
 ## Proxy resource limits
 
 Each API process allows at most **32 simultaneous proxy media responses**. Once the limit is reached, proxy requests return HTTP **503** with `Retry-After: 5`; direct CDN redirects are unaffected. Upstream media connections enforce a **45-second idle read timeout** that resets when network data is received, rather than a total streaming deadline. Outbound media connections accept only ports 80 and 443; this may exclude unusual provider CDNs. These settings supplement, rather than replace, per-client rate limiting and ingress/egress controls.
+
+**API key exemption policy:** `API_KEY_EXEMPT_IPS` defaults to an empty list, including for localhost. A reverse proxy using `127.0.0.1` as the TCP peer must not automatically bypass API authentication. If exemptions are necessary for a protected internal deployment, explicitly configure them after reviewing every ingress path.
