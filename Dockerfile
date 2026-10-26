@@ -19,8 +19,9 @@ COPY --from=builder /video-api /app/video-api
 RUN mkdir -p downloads/youtube downloads/bilibili downloads/twitter \
     downloads/instagram downloads/twitch downloads/temp logs config/cookies \
     && chown -R appuser:appuser /app
+COPY --chmod=755 healthcheck.sh /app/healthcheck.sh
 USER appuser
 EXPOSE 8001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD curl -fsS http://localhost:8001/api/v2/system/health >/dev/null || exit 1
+    CMD ["/app/healthcheck.sh"]
 CMD ["/app/video-api"]

@@ -70,13 +70,41 @@ jobs:
         run: |
           set -eu
           trap 'docker compose down -v' EXIT
+          # Validate the default, unauthenticated local development mode.
           docker compose up -d --build
+          healthy=0
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8001/health >/dev/null; then
-              exit 0
+            if curl -fsS --max-time 3 http://127.0.0.1:8001/health >/dev/null; then
+              healthy=1
+              break
             fi
             sleep 2
           done
+          if [ "$healthy" -ne 1 ]; then
+            docker compose ps
+            docker compose logs
+            exit 1
+          fi
+
+          # A localhost reverse proxy must NOT bypass enabled API key auth.
+          docker compose down -v
+          export API_KEY_ENABLED=true
+          export API_KEYS=ci-smoke-secret
+          docker compose up -d
+          healthy=0
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 3 -H "X-API-Key: $API_KEYS"                 http://127.0.0.1:8001/health >/dev/null; then
+              healthy=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$healthy" -ne 1 ]; then
+            docker compose ps
+            docker compose logs
+            exit 1
+          fi
+          status="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8001/health)"
+          test "$status" = "401"
+          docker compose exec -T video-api /app/healthcheck.sh
           docker compose ps
-          docker compose logs
-          exit 1

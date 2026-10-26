@@ -43,7 +43,7 @@ services:
     restart: unless-stopped
     networks: [video-api-network]
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8001/api/v2/system/health"]
+      test: ["CMD", "/app/healthcheck.sh"]
       interval: 30s
       timeout: 5s
       retries: 3
